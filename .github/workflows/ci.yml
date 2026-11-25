@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install libvips (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libvips-dev libheif-plugin-libde265 pkg-config
+
+      - name: Install libvips (macOS)
+        if: runner.os == 'macOS'
+        run: brew install vips
+
+      - name: libvips version
+        run: pkg-config --modversion vips || true
+
+      - name: Format and vet
+        run: make check
+
+      - name: Race
+        run: make race
+
+      - name: Build
+        run: make build
