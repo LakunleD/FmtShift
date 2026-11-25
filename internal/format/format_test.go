@@ -1,7 +1,9 @@
 package format
 
 import (
+	"encoding/binary"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -41,11 +43,71 @@ func ftyp(major string, compatible ...string) []byte {
 	for _, c := range compatible {
 		b = append(b, c...)
 	}
-	b[3] = byte(len(b))
+	binary.BigEndian.PutUint32(b[0:4], uint32(len(b)))
 	return b
 }
 
+// ftypLarge builds an ftyp box that uses the 64-bit largesize field.
+func ftypLarge(major string, compatible ...string) []byte {
+	b := []byte{0, 0, 0, 1}
+	b = append(b, "ftyp"...)
+	b = append(b, 0, 0, 0, 0, 0, 0, 0, 0) // largesize, filled below
+	b = append(b, major...)
+	b = append(b, 0, 0, 0, 0)
+	for _, c := range compatible {
+		b = append(b, c...)
+	}
+	b[15] = byte(len(b))
+	return b
+}
+
+// longBrandList returns n filler brands, pushing later brands past 256 bytes.
+func longBrandList(n int) []string {
+	brands := make([]string, n)
+	for i := range brands {
+		brands[i] = "zzzz"
+	}
+	return brands
+}
+
 func TestDetect(t *testing.T) {
+	longFtyp := ftyp("mif1", append(longBrandList(100), "heic")...)
+	// A box claiming to be larger than the bytes read must not panic.
+	truncated := ftyp("mif1", "miaf", "heic")
+	truncated[2] = 0x10
+
+	tests := []struct {
+		name   string
+		header []byte
+		want   Format
+	}{
+		{"heic largesize", ftypLarge("mif1", "heic"), HEIC},
+		{"heic brand past 256 bytes", longFtyp, HEIC},
+		{"box larger than header", truncated, HEIC},
+		{"avif largesize rejected", ftypLarge("avif", "mif1"), ""},
+		{"size too small", []byte{0, 0, 0, 8, 'f', 't', 'y', 'p', 'h', 'e', 'i', 'c', 0, 0, 0, 0}, ""},
+		{"largesize too short", []byte{0, 0, 0, 1, 'f', 't', 'y', 'p', 0, 0}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Detect(tt.header)
+			if tt.want == "" {
+				if !errors.Is(err, ErrUnknown) {
+					t.Fatalf("Detect = %q, %v; want ErrUnknown", got, err)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("Detect = %q, %v; want %q", got, err, tt.want)
+			}
+		})
+	}
+	if len(longFtyp) <= 256 {
+		t.Fatalf("long ftyp fixture is only %d bytes", len(longFtyp))
+	}
+}
+
+func TestDetectBasic(t *testing.T) {
 	tests := []struct {
 		name   string
 		header []byte
@@ -101,6 +163,19 @@ func TestDetectFile(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("%s: got %q, %v; want %q", name, got, err, want)
 		}
+	}
+}
+
+func TestDetectFileLongFtyp(t *testing.T) {
+	header := ftyp("mif1", append(longBrandList(100), "heic")...)
+	path := filepath.Join(t.TempDir(), "long.heic")
+	// Pad with an mdat-like tail so the file is larger than the header.
+	if err := os.WriteFile(path, append(header, make([]byte, 8192)...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := DetectFile(path)
+	if err != nil || got != HEIC {
+		t.Fatalf("DetectFile = %q, %v; want HEIC", got, err)
 	}
 }
 

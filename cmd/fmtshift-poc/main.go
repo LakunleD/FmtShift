@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/lakunled/fmtshift/internal/codecs"
 	"github.com/lakunled/fmtshift/internal/codecs/vips"
+	"github.com/lakunled/fmtshift/internal/filesystem"
 	"github.com/lakunled/fmtshift/internal/format"
 )
 
@@ -47,24 +47,19 @@ func run(src, dst string, quality int, strip bool) error {
 	if err != nil {
 		return fmt.Errorf("output %s: %w", dst, err)
 	}
-	if _, err := os.Lstat(dst); err == nil {
-		return fmt.Errorf("%s already exists", dst)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
 	codec, err := vips.New()
 	if err != nil {
 		return err
 	}
 
 	start := time.Now()
-	err = codec.Convert(context.Background(), src, srcFmt, dst, dstFmt, codecs.Options{
-		Quality:       quality,
-		StripMetadata: strip,
+	err = filesystem.WriteNew(dst, func(tmp string) error {
+		return codec.Convert(context.Background(), src, srcFmt, tmp, dstFmt, codecs.Options{
+			Quality:       quality,
+			StripMetadata: strip,
+		})
 	})
 	if err != nil {
-		os.Remove(dst) // libvips may leave a partial file; we created it.
 		return err
 	}
 	fmt.Printf("Converted %s -> %s (%s, %s)\n", src, dst, codec.Name(), time.Since(start).Round(time.Millisecond))

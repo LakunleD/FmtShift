@@ -186,23 +186,87 @@ func TestAlphaKeptForPNG(t *testing.T) {
 	}
 }
 
-func TestICCProfile(t *testing.T) {
+func rgb8(img image.Image, x, y int) [3]int {
+	r, g, b, _ := img.At(x, y).RGBA()
+	return [3]int{int(r >> 8), int(g >> 8), int(b >> 8)}
+}
+
+func near(got, want [3]int, tol int) bool {
+	for i := range got {
+		if d := got[i] - want[i]; d > tol || d < -tol {
+			return false
+		}
+	}
+	return true
+}
+
+// The display-p3.heic fixture is sRGB (230,40,40) re-encoded as P3 pixel
+// values (212,61,52) with a P3 profile attached; see scripts/gen-fixtures.sh.
+var (
+	fixtureSRGB = [3]int{230, 40, 40}
+	fixtureP3   = [3]int{212, 61, 52}
+)
+
+// colourTolerance covers HEVC and JPEG/WebP quantisation of a flat colour.
+// It is well below the ~20-level gap between the P3 and sRGB encodings, so
+// a missing or wrong colour conversion cannot pass.
+const colourTolerance = 6
+
+func TestICCProfileKept(t *testing.T) {
 	c := newCodec(t)
 	src := fixture("heic/display-p3.heic")
 	if !mustProbe(t, src).HasICC {
 		t.Fatal("fixture has no ICC profile")
 	}
-
-	kept := convert(t, c, src, format.HEIC, format.JPEG, defaultOpts)
-	if !mustProbe(t, kept).HasICC {
-		t.Error("ICC profile not preserved")
+	for _, dstFmt := range []format.Format{format.JPEG, format.PNG} {
+		out := convert(t, c, src, format.HEIC, dstFmt, defaultOpts)
+		if !mustProbe(t, out).HasICC {
+			t.Errorf("%s: ICC profile not preserved", dstFmt)
+		}
+		// Pixels must stay P3-encoded to match the profile carried with them.
+		// Go's decoders ignore ICC, so these are the raw stored values.
+		if got := rgb8(decode(t, out), 32, 16); !near(got, fixtureP3, colourTolerance) {
+			t.Errorf("%s: raw pixel = %v; want P3 values ≈ %v", dstFmt, got, fixtureP3)
+		}
 	}
+}
 
-	stripped := convert(t, c, src, format.HEIC, format.JPEG,
-		codecs.Options{Quality: 90, StripMetadata: true})
-	i := mustProbe(t, stripped)
-	if i.HasICC || i.HasEXIF {
-		t.Errorf("metadata not stripped: icc=%v exif=%v", i.HasICC, i.HasEXIF)
+func TestICCProfileStrippedConvertsToSRGB(t *testing.T) {
+	c := newCodec(t)
+	opts := codecs.Options{Quality: 95, StripMetadata: true}
+	for _, dstFmt := range []format.Format{format.JPEG, format.PNG} {
+		out := convert(t, c, fixture("heic/display-p3.heic"), format.HEIC, dstFmt, opts)
+		i := mustProbe(t, out)
+		if i.HasICC || i.HasEXIF {
+			t.Errorf("%s: metadata not stripped: icc=%v exif=%v", dstFmt, i.HasICC, i.HasEXIF)
+		}
+		// Without a profile, viewers assume sRGB, so pixels must be sRGB.
+		if got := rgb8(decode(t, out), 32, 16); !near(got, fixtureSRGB, colourTolerance) {
+			t.Errorf("%s: pixel = %v; want sRGB ≈ %v", dstFmt, got, fixtureSRGB)
+		}
+	}
+}
+
+// The 10-bit fixture is a 0→65535 horizontal grey ramp. Outputs must keep the
+// ramp's tone, not clip it or misread the bit depth.
+func TestTenBitHEIC(t *testing.T) {
+	c := newCodec(t)
+	src := fixture("heic/10bit.heic")
+	for _, tc := range []struct {
+		dstFmt format.Format
+		opts   codecs.Options
+	}{
+		{format.JPEG, defaultOpts},
+		{format.PNG, defaultOpts},
+		{format.JPEG, codecs.Options{Quality: 90, StripMetadata: true}},
+	} {
+		out := convert(t, c, src, format.HEIC, tc.dstFmt, tc.opts)
+		img := decode(t, out)
+		left, mid, right := luma(img, 0, 16), luma(img, 32, 16), luma(img, 63, 16)
+		if left > 8 || right < 247 || mid < 120 || mid > 140 {
+			t.Errorf("%s strip=%v: ramp = %d/%d/%d; want ≈0/130/255",
+				tc.dstFmt, tc.opts.StripMetadata, left, mid, right)
+		}
 	}
 }
 
@@ -246,12 +310,23 @@ func TestErrors(t *testing.T) {
 
 func TestInvalidQuality(t *testing.T) {
 	c := newCodec(t)
-	dst := filepath.Join(t.TempDir(), "out.jpg")
-	for _, q := range []int{0, 101} {
-		err := c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, codecs.Options{Quality: q})
-		if err == nil {
-			t.Errorf("quality %d accepted", q)
+	for _, dstFmt := range []format.Format{format.JPEG, format.WebP} {
+		for _, q := range []int{0, 101} {
+			dst := filepath.Join(t.TempDir(), "out"+dstFmt.Extension())
+			err := c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, dstFmt, codecs.Options{Quality: q})
+			if err == nil {
+				t.Errorf("%s quality %d accepted", dstFmt, q)
+			}
 		}
+	}
+}
+
+// Quality is documented as ignored by lossless formats, so PNG must accept
+// any value, including the zero value.
+func TestQualityIgnoredForPNG(t *testing.T) {
+	c := newCodec(t)
+	for _, q := range []int{0, 101} {
+		convert(t, c, fixture("heic/gradient.heic"), format.HEIC, format.PNG, codecs.Options{Quality: q})
 	}
 }
 

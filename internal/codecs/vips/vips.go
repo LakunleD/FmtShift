@@ -93,8 +93,13 @@ func (c *Codec) Convert(ctx context.Context, src string, srcFormat format.Format
 	if !codecs.CanWrite(c.caps, dstFormat) {
 		return fmt.Errorf("%w: cannot write %s", codecs.ErrUnsupported, dstFormat)
 	}
-	if opts.Quality < 1 || opts.Quality > 100 {
-		return fmt.Errorf("vips: quality %d out of range 1–100", opts.Quality)
+	quality := opts.Quality
+	if dstFormat.Lossy() {
+		if quality < 1 || quality > 100 {
+			return fmt.Errorf("vips: quality %d out of range 1–100", quality)
+		}
+	} else {
+		quality = 0 // ignored by lossless savers
 	}
 	maxPixels := opts.MaxPixels
 	if maxPixels <= 0 {
@@ -117,7 +122,7 @@ func (c *Codec) Convert(ctx context.Context, src string, srcFormat format.Format
 	defer C.vips_thread_shutdown()
 
 	rc := C.fs_convert(cSrc, formatCode(srcFormat), cDst, formatCode(dstFormat),
-		C.int(opts.Quality), strip, C.gint64(maxPixels))
+		C.int(quality), strip, C.gint64(maxPixels))
 	msg := takeError()
 
 	switch rc {

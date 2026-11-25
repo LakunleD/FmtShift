@@ -54,12 +54,16 @@ func (f Format) Extension() string {
 	return ""
 }
 
+// Lossy reports whether encoding to f uses a quality setting. WebP is treated
+// as lossy because FmtShift always writes lossy WebP.
+func (f Format) Lossy() bool { return f == JPEG || f == WebP }
+
 // String returns the upper-case display name.
 func (f Format) String() string { return strings.ToUpper(string(f)) }
 
-// HeaderSize is the number of leading bytes Detect needs to identify any
-// supported format, including HEIF files with long ftyp brand lists.
-const HeaderSize = 256
+// HeaderSize is the number of leading bytes DetectFile reads. It covers HEIF
+// ftyp boxes with long compatible-brand lists; brands beyond it are not seen.
+const HeaderSize = 4096
 
 var (
 	jpegMagic = []byte{0xFF, 0xD8, 0xFF}
@@ -91,19 +95,46 @@ func Detect(header []byte) (Format, error) {
 // isHEIC reports whether header begins with an ISO-BMFF ftyp box whose major
 // or compatible brands identify HEVC-coded HEIF. Generic HEIF brands such as
 // mif1 are also used by AVIF, so they alone are not sufficient.
+//
+// Box layout (ISO/IEC 14496-12 §4.2): a 32-bit size and "ftyp", then an
+// optional 64-bit largesize when size == 1, then major brand, minor version
+// and compatible brands up to the end of the box. Size 0 means the box
+// extends to the end of the file.
 func isHEIC(header []byte) bool {
-	if len(header) < 16 || string(header[4:8]) != "ftyp" {
+	if len(header) < 8 || string(header[4:8]) != "ftyp" {
 		return false
 	}
-	size := int(binary.BigEndian.Uint32(header[0:4]))
-	if size < 16 || size > len(header) {
-		size = len(header)
+	start := 8 // first byte after the box header
+	var size uint64
+	switch size32 := binary.BigEndian.Uint32(header[0:4]); size32 {
+	case 0:
+		size = uint64(len(header))
+	case 1:
+		if len(header) < 16 {
+			return false
+		}
+		size = binary.BigEndian.Uint64(header[8:16])
+		start = 16
+	default:
+		size = uint64(size32)
 	}
-	if heicBrands[string(header[8:12])] {
+	// The box must hold at least the major brand and minor version.
+	if size < uint64(start+8) {
+		return false
+	}
+	end := len(header)
+	if size < uint64(end) {
+		end = int(size)
+	}
+	if end < start+4 {
+		return false
+	}
+
+	if heicBrands[string(header[start:start+4])] {
 		return true
 	}
-	// header[12:16] is the minor version; compatible brands follow.
-	for i := 16; i+4 <= size; i += 4 {
+	// Skip major brand and minor version; compatible brands follow.
+	for i := start + 8; i+4 <= end; i += 4 {
 		if heicBrands[string(header[i:i+4])] {
 			return true
 		}

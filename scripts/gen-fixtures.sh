@@ -44,9 +44,21 @@ heif-enc -q 90 -o "$out/heic/alpha.heic" "$work/rgba.png"
 heif-enc -q 90 -t 16 -o "$out/heic/with-thumbnail.heic" "$work/rgb.png"
 # Two top-level images: must be rejected.
 heif-enc -q 90 -o "$out/heic/multi-image.heic" "$work/rgb.png" "$work/rgb.png"
-# Display P3 ICC profile (libvips built-in profile).
-vips icc_transform "$work/rgb.png" "$work/p3.v" p3 --input-profile srgb
-vips heifsave "$work/p3.v" "$out/heic/display-p3.heic" --Q 90 --compression hevc
+# Display P3: solid sRGB (230,40,40) re-encoded as P3 pixel values with the
+# libvips built-in P3 profile attached. A flat, saturated colour keeps codec
+# error small while making P3 and sRGB encodings clearly different.
+vips black "$work/black.v" 64 32 --bands 3
+vips linear "$work/black.v" "$work/red.v" "1 1 1" "230 40 40" --uchar
+vips copy "$work/red.v" "$work/red.png" --interpretation srgb
+vips icc_transform "$work/red.png" "$work/p3.v" p3 --input-profile srgb --intent relative
+vips heifsave "$work/p3.v" "$out/heic/display-p3.heic" --Q 95 --compression hevc
+
+# 10-bit HEIC from a 16-bit horizontal gradient (0 → 65535).
+vips linear "$work/x.v" "$work/g16.v" 1040 0
+vips cast "$work/g16.v" "$work/g16u.v" ushort
+vips bandjoin "$work/g16u.v $work/g16u.v $work/g16u.v" "$work/rgb16.v"
+vips copy "$work/rgb16.v" "$work/rgb16.png" --interpretation rgb16
+heif-enc -q 95 -b 10 -o "$out/heic/10bit.heic" "$work/rgb16.png"
 
 # --- JPEG ---------------------------------------------------------------
 # EXIF orientation 6 (rotate 90° clockwise to display).
