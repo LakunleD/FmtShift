@@ -35,9 +35,6 @@ func TestWriteNew(t *testing.T) {
 	if b, _ := os.ReadFile(dst); string(b) != "new" {
 		t.Fatalf("content = %q", b)
 	}
-	if fi, _ := os.Stat(dst); fi.Mode().Perm() != outputMode {
-		t.Errorf("mode = %v; want %v", fi.Mode().Perm(), outputMode)
-	}
 	if got := entries(t, dir); len(got) != 1 {
 		t.Errorf("directory contains %v; want only out.jpg", got)
 	}

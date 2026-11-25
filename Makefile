@@ -22,8 +22,20 @@ race:
 fuzz:
 	go test -run='^$$' -fuzz=FuzzDetect -fuzztime=30s ./internal/format
 
-bench:
-	go test -run='^$$' -bench=. -benchmem ./...
+# Large benchmark inputs are git-ignored and regenerated whenever the
+# generator script changes. The stamp is written only after the script
+# succeeds, so a partial or outdated set of inputs is never reused.
+BENCH_STAMP := testdata/bench/.stamp
+
+$(BENCH_STAMP): scripts/gen-bench-images.sh
+	rm -rf testdata/bench
+	./scripts/gen-bench-images.sh
+	touch $@
+
+# FMTSHIFT_REQUIRE_BENCH_INPUTS turns a missing input into a failure
+# instead of a skip.
+bench: $(BENCH_STAMP)
+	FMTSHIFT_REQUIRE_BENCH_INPUTS=1 go test -run='^$$' -bench=. -benchtime=5x ./...
 
 vet:
 	go vet ./...

@@ -61,9 +61,19 @@ func (f Format) Lossy() bool { return f == JPEG || f == WebP }
 // String returns the upper-case display name.
 func (f Format) String() string { return strings.ToUpper(string(f)) }
 
-// HeaderSize is the number of leading bytes DetectFile reads. It covers HEIF
-// ftyp boxes with long compatible-brand lists; brands beyond it are not seen.
-const HeaderSize = 4096
+const (
+	// HeaderSize is the number of leading bytes DetectFile reads first. It
+	// covers every format's signature and typical HEIF ftyp boxes.
+	HeaderSize = 4096
+	// MaxFtypSize bounds how much of a declared HEIF ftyp box DetectFile will
+	// read. Real files use well under 100 bytes; the cap stops a malformed
+	// size field from causing a large read.
+	MaxFtypSize = 64 << 10
+)
+
+// ErrHeaderTooLarge is returned when a file declares an ftyp box larger than
+// MaxFtypSize, so its brands cannot be checked.
+var ErrHeaderTooLarge = errors.New("file type header too large")
 
 var (
 	jpegMagic = []byte{0xFF, 0xD8, 0xFF}
@@ -101,22 +111,12 @@ func Detect(header []byte) (Format, error) {
 // and compatible brands up to the end of the box. Size 0 means the box
 // extends to the end of the file.
 func isHEIC(header []byte) bool {
-	if len(header) < 8 || string(header[4:8]) != "ftyp" {
+	start, size, ok := ftypBox(header)
+	if !ok {
 		return false
 	}
-	start := 8 // first byte after the box header
-	var size uint64
-	switch size32 := binary.BigEndian.Uint32(header[0:4]); size32 {
-	case 0:
+	if size == 0 {
 		size = uint64(len(header))
-	case 1:
-		if len(header) < 16 {
-			return false
-		}
-		size = binary.BigEndian.Uint64(header[8:16])
-		start = 16
-	default:
-		size = uint64(size32)
 	}
 	// The box must hold at least the major brand and minor version.
 	if size < uint64(start+8) {
@@ -142,18 +142,71 @@ func isHEIC(header []byte) bool {
 	return false
 }
 
+// ftypBox parses the header of an ISO-BMFF ftyp box at the start of header.
+// It returns the offset of the major brand and the declared box size, where
+// size 0 means "to the end of the file".
+func ftypBox(header []byte) (start int, size uint64, ok bool) {
+	if len(header) < 8 || string(header[4:8]) != "ftyp" {
+		return 0, 0, false
+	}
+	switch size32 := binary.BigEndian.Uint32(header[0:4]); size32 {
+	case 0:
+		return 8, 0, true
+	case 1:
+		if len(header) < 16 {
+			return 0, 0, false
+		}
+		return 16, binary.BigEndian.Uint64(header[8:16]), true
+	default:
+		return 8, uint64(size32), true
+	}
+}
+
 // DetectFile reads the start of the file at path and identifies its format.
+// For HEIF files it reads the whole declared ftyp box, up to MaxFtypSize, so
+// compatible brands are never missed because of a fixed read size.
 func DetectFile(path string) (Format, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
+	return DetectReaderAt(f)
+}
 
-	buf := make([]byte, HeaderSize)
-	n, err := io.ReadFull(f, buf)
-	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+// DetectReaderAt identifies the format of the content in r, reading from
+// offset 0, with the same rules as DetectFile. Use it to check a file that is
+// already open, so detection and decoding see the same file.
+func DetectReaderAt(r io.ReaderAt) (Format, error) {
+	f := io.NewSectionReader(r, 0, 1<<62)
+	buf, err := readUpTo(f, HeaderSize)
+	if err != nil {
 		return "", err
 	}
-	return Detect(buf[:n])
+
+	if _, size, ok := ftypBox(buf); ok && (size == 0 || size > uint64(len(buf))) && len(buf) == HeaderSize {
+		want := uint64(MaxFtypSize) // size 0: box runs to end of file
+		if size != 0 {
+			if size > MaxFtypSize {
+				return "", fmt.Errorf("%w: declared ftyp box is %d bytes", ErrHeaderTooLarge, size)
+			}
+			want = size
+		}
+		rest, err := readUpTo(f, int(want)-len(buf))
+		if err != nil {
+			return "", err
+		}
+		buf = append(buf, rest...)
+	}
+	return Detect(buf)
+}
+
+// readUpTo reads at most n bytes from r, stopping early at end of file.
+func readUpTo(r io.Reader, n int) ([]byte, error) {
+	buf := make([]byte, n)
+	got, err := io.ReadFull(r, buf)
+	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+	return buf[:got], nil
 }

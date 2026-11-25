@@ -247,6 +247,57 @@ func TestICCProfileStrippedConvertsToSRGB(t *testing.T) {
 	}
 }
 
+// nclx-p3.heic has the same P3 pixel values as display-p3.heic but signals
+// its colour space only through an NCLX box, which libvips ignores.
+func TestNCLXDisplayP3(t *testing.T) {
+	c := newCodec(t)
+	src := fixture("heic/nclx-p3.heic")
+	if mustProbe(t, src).HasICC {
+		t.Fatal("fixture unexpectedly has an ICC profile")
+	}
+	for _, dstFmt := range []format.Format{format.JPEG, format.PNG} {
+		kept := convert(t, c, src, format.HEIC, dstFmt, defaultOpts)
+		if !mustProbe(t, kept).HasICC {
+			t.Errorf("%s: P3 profile not attached", dstFmt)
+		}
+		if got := rgb8(decode(t, kept), 32, 16); !near(got, fixtureP3, colourTolerance) {
+			t.Errorf("%s: raw pixel = %v; want P3 values ≈ %v", dstFmt, got, fixtureP3)
+		}
+
+		stripped := convert(t, c, src, format.HEIC, dstFmt, codecs.Options{Quality: 95, StripMetadata: true})
+		if mustProbe(t, stripped).HasICC {
+			t.Errorf("%s: ICC not stripped", dstFmt)
+		}
+		if got := rgb8(decode(t, stripped), 32, 16); !near(got, fixtureSRGB, colourTolerance) {
+			t.Errorf("%s: pixel = %v; want sRGB ≈ %v", dstFmt, got, fixtureSRGB)
+		}
+	}
+}
+
+func TestHDRAndUnsupportedColourRejected(t *testing.T) {
+	c := newCodec(t)
+	for _, tc := range []struct {
+		src  string
+		want error
+	}{
+		{"heic/hdr-pq.heic", codecs.ErrHDR},
+		{"heic/hdr-hlg.heic", codecs.ErrHDR},
+		{"heic/nclx-bt2020-sdr.heic", codecs.ErrColourSpace},
+	} {
+		for _, strip := range []bool{false, true} {
+			dst := filepath.Join(t.TempDir(), "out.jpg")
+			err := c.Convert(context.Background(), fixture(tc.src), format.HEIC, dst, format.JPEG,
+				codecs.Options{Quality: 90, StripMetadata: strip})
+			if !errors.Is(err, tc.want) {
+				t.Errorf("%s strip=%v: err = %v; want %v", tc.src, strip, err, tc.want)
+			}
+			if _, err := os.Stat(dst); !os.IsNotExist(err) {
+				t.Errorf("%s: output written for rejected input", tc.src)
+			}
+		}
+	}
+}
+
 // The 10-bit fixture is a 0→65535 horizontal grey ramp. Outputs must keep the
 // ramp's tone, not clip it or misread the bit depth.
 func TestTenBitHEIC(t *testing.T) {

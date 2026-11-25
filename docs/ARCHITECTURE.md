@@ -14,8 +14,8 @@ All file processing takes place locally on the user's device. No external server
 |---|---|
 | Language | Go |
 | CLI | Cobra |
-| Image processing | Codec abstraction; implementation selected by M0 |
-| HEIC decoding | M0 candidates: libvips/libheif and a CGo-free Go/Wasm path |
+| Image processing | libvips 8.15+ through cgo, behind a codec interface |
+| HEIC decoding | libheif (via libvips), HEVC decoding by libde265 |
 | Directory monitoring | fsnotify |
 | Configuration | JSON |
 | Logging | Go slog |
@@ -59,8 +59,9 @@ fmtshift/
 │   │   ├── options.go
 │   │   └── result.go
 │   ├── codecs/
-│   │   ├── registry.go
-│   │   └── adapters/        # implementation selected by M0
+│   │   ├── codec.go         # Codec interface, capabilities, errors
+│   │   └── vips/            # libvips adapter (cgo + small C pipeline)
+│   ├── format/              # format names and content-based detection
 │   ├── batch/
 │   ├── watcher/
 │   ├── config/
@@ -136,21 +137,101 @@ Initial supported formats:
 | PNG | Yes | Yes |
 | WebP | Yes | Yes |
 
-M0 will compare two implementations behind the same codec interface:
+#### Codec decision (M0)
 
-1. libvips with libheif through cgo. This is the performance and feature-depth
-   candidate, but requires target C toolchains and native-library packaging.
-2. A CGo-free build using the Go standard library for JPEG and PNG plus
-   embedded HEIC and WebP decoders/encoders. Candidate packages may use Wasm
-   internally; “CGo-free” does not imply that the codec itself is written in
-   Go.
+**Selected:** libvips through cgo, with HEIC decoding by libvips' libheif
+module. The adapter is a small C pipeline (`internal/codecs/vips`) rather than
+a third-party Go binding, because libvips' variadic C API cannot be called
+from Go directly and the pipeline needs only a handful of operations.
 
-The comparison must cover output correctness, orientation, alpha, ICC/NCLX
-profiles, EXIF/XMP, Display P3, 10-bit and HDR input, performance, peak memory,
-binary size, clean-machine installation, supported targets, security upkeep
-and redistribution licenses. The selected implementation and rejected
-alternatives will be recorded here after M0. Until then, no codec is an
-architectural commitment.
+**Rejected:** a CGo-free build (Go standard library JPEG/PNG plus embedded
+Wasm HEIC/WebP codecs). It would give self-contained binaries and trivial
+cross-compilation, but libvips was preferred for decoding performance and
+for mature colour management (lcms2) and metadata handling, which the
+CGo-free path would have had to rebuild. The codec interface keeps this
+option open if packaging proves unworkable.
+
+Pipeline behaviour, verified by integration tests against synthetic fixtures:
+
+- Inputs are loaded with the explicit loader for the detected format; content
+  sniffing is not used, and loaders libvips marks as untrusted are blocked.
+- The source is opened once. The content check, HEIF colour inspection and
+  decoding all read that one descriptor, so replacing the path mid-conversion
+  cannot pair one file's colour policy with another file's pixels.
+- libvips keeps errors in one process-wide buffer. Conversions run
+  concurrently under a shared lock and never read it; a failed conversion is
+  retried once under an exclusive lock and reports only that retry's message.
+  libvips warnings (the only diagnostics for some libpng failures) are routed
+  into the buffer rather than printed to stderr.
+- libheif applies HEIF `irot`/`imir` transforms and libvips removes the stale
+  orientation tag; `vips_autorot` then applies EXIF orientation for other
+  formats. Kept EXIF has orientation 1.
+- Inputs with more than one top-level image or frame are rejected; HEIF
+  thumbnails and auxiliary images are ignored.
+- JPEG output composites alpha onto white.
+- Metadata (EXIF, XMP, IPTC, ICC) is kept by default and pixels stay in their
+  embedded colour space. When metadata is stripped, pixels are first converted
+  to sRGB so colours survive losing the profile.
+- HEIF colour signalling is read directly from libheif, because libvips does
+  not expose NCLX boxes and would otherwise treat every NCLX image as sRGB.
+  The v0.1 policy (`internal/codecs/vips/colour.go`):
+  - **HDR (PQ or HLG transfer) is rejected** with `ErrHDR`, even when an ICC
+    profile is present. Tone mapping to SDR is future work.
+  - An embedded ICC profile otherwise takes precedence over NCLX.
+  - NCLX Display P3 (primaries 12) without ICC gets libvips' built-in P3
+    profile attached, so it is kept or converted to sRGB correctly.
+  - NCLX BT.709/BT.601/unspecified primaries are treated as sRGB.
+  - Other primaries (e.g. BT.2020 SDR) or unusual transfer functions without
+    an ICC profile are rejected with `ErrColourSpace`.
+- 10-bit SDR input is reduced to 8 bits for JPEG/WebP by libvips.
+- HDR gain maps (as in typical iPhone HDR photos, whose base image is SDR)
+  are not written; outputs contain the SDR base image.
+- A pixel limit (default ~268 MP) is checked before full decoding.
+- Outputs are created with mode 0666 minus the user's umask, like any new
+  file; libvips writes into the prepared temporary file in place.
+
+Measurements (Apple M4 Pro, libvips 8.18.7, synthetic 4032×3024 photo-like
+HEIC of 3.2 MB; `make bench`):
+
+| Conversion | Time | Peak RSS | Output |
+|---|---|---|---|
+| HEIC → JPEG (Q85) | 0.53 s | 242 MB | 1.7 MB |
+| HEIC → PNG | 1.15 s | 180 MB | 23 MB |
+| HEIC → WebP (Q85) | 1.12 s | 241 MB | 1.1 MB |
+| 10-bit SDR HEIC → JPEG | 0.55 s | – | – |
+
+The 10-bit benchmark input is SDR (no PQ/HLG, no gain map); it measures
+10-bit decoding cost only and says nothing about HDR handling.
+
+Batch throughput (HEIC → JPEG): 23 MP/s with 1 worker, 37 MP/s with 2 and
+56 MP/s with 4, so a single conversion is largely single-threaded (libheif
+decode) and Go workers provide most of the parallelism. Process start-up
+costs about 40 ms, and reading HEIF colour signalling adds about 10 ms per
+12 MP conversion. The release binary is 2.6 MB plus shared libraries.
+
+Known issues and open items:
+
+- Homebrew's libheif links the GPL x265 encoder, so its libraries cannot be
+  bundled in a release as-is. A release needs a decode-only libheif build or
+  must depend on a package manager's libvips.
+- HEVC is patent-encumbered; some projects (e.g. sharp) and distributions
+  ship without HEVC decoding for this reason. Distribution of libde265 must be
+  reviewed before release. On macOS, Apple's ImageIO is a possible HEIC
+  decoder that avoids shipping one.
+- Homebrew installs libvips' dependency libarchive keg-only; the Makefile adds
+  it to `PKG_CONFIG_PATH`.
+- Homebrew's libvips pulls in ~90 packages (ImageMagick, poppler, etc.); a
+  release should link a minimal libvips.
+- libvips has no cheap cancellation; context is checked before each
+  conversion only.
+- A failed conversion briefly blocks all others while it is retried for its
+  diagnostic message. Failures are expected to be rare; a batch of many
+  corrupt files would run serially.
+- NCLX handling and HDR rejection are verified with synthetic fixtures only.
+  Not yet verified with real camera files: iPhone images carrying both `irot`
+  and EXIF orientation, HDR gain maps, and PQ/HLG HEICs from Android phones
+  and cameras.
+- HDR to SDR tone mapping is not implemented; HDR inputs are rejected.
 
 HEIF decoding must select the primary image. Thumbnails, depth maps, gain maps
 and other auxiliary images are ignored in v0.1; true sequences and containers
@@ -331,16 +412,13 @@ FmtShift will be compiled and packaged for:
 | Windows | AMD64 | Deferred to v0.2; GitHub Releases, later WinGet |
 | Linux | AMD64, ARM64 | GitHub Releases, later APT |
 
-Native image processing dependencies introduce additional build and packaging
-requirements. Cgo cross-compilation requires a target C toolchain and native
-dependencies; builds may therefore use platform-specific CI runners. A
-CGo-free selected codec should instead produce self-contained Go binaries.
+FmtShift links libvips through cgo, so every target is built on a native CI
+runner (or with a target C toolchain) against that platform's libvips.
 
-Each release must either be self-contained, bundle compatible native
-libraries, or install the required dependencies through a package manager.
-The release must state which model it uses.
-
-Native builds will use platform-specific CI runners where needed.
+Each release must either bundle compatible native libraries or install them
+through a package manager, and must state which model it uses. The packaging
+model for each platform is still to be decided; see the known issues in
+§5.4 (GPL x265 in Homebrew's libheif, HEVC patents, dependency size).
 
 Users should not need to install Go to use a published release.
 

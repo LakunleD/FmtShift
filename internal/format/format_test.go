@@ -179,6 +179,72 @@ func TestDetectFileLongFtyp(t *testing.T) {
 	}
 }
 
+func writeTemp(t *testing.T, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "file.heic")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestDetectFileFtypBeyondInitialRead(t *testing.T) {
+	// ~10 KB ftyp box whose only HEIC brand is past HeaderSize.
+	brands := append(longBrandList(2500), "heic")
+	tail := make([]byte, 1024) // following boxes
+
+	t.Run("32-bit size", func(t *testing.T) {
+		box := ftyp("mif1", brands...)
+		if len(box) <= HeaderSize {
+			t.Fatalf("box is only %d bytes", len(box))
+		}
+		got, err := DetectFile(writeTemp(t, append(box, tail...)))
+		if err != nil || got != HEIC {
+			t.Fatalf("DetectFile = %q, %v; want HEIC", got, err)
+		}
+	})
+
+	t.Run("64-bit largesize", func(t *testing.T) {
+		box := ftypLarge("mif1", brands...)
+		binary.BigEndian.PutUint64(box[8:16], uint64(len(box)))
+		got, err := DetectFile(writeTemp(t, append(box, tail...)))
+		if err != nil || got != HEIC {
+			t.Fatalf("DetectFile = %q, %v; want HEIC", got, err)
+		}
+	})
+
+	t.Run("size 0 runs to end of file", func(t *testing.T) {
+		box := ftyp("mif1", brands...)
+		binary.BigEndian.PutUint32(box[0:4], 0)
+		got, err := DetectFile(writeTemp(t, box))
+		if err != nil || got != HEIC {
+			t.Fatalf("DetectFile = %q, %v; want HEIC", got, err)
+		}
+	})
+
+	t.Run("brand absent", func(t *testing.T) {
+		box := ftyp("mif1", longBrandList(2500)...)
+		if _, err := DetectFile(writeTemp(t, append(box, tail...))); !errors.Is(err, ErrUnknown) {
+			t.Fatalf("err = %v; want ErrUnknown", err)
+		}
+	})
+}
+
+func TestDetectFileFtypTooLarge(t *testing.T) {
+	box := ftyp("mif1", longBrandList(1100)...) // > HeaderSize so a re-read is needed
+	binary.BigEndian.PutUint32(box[0:4], MaxFtypSize+4)
+	_, err := DetectFile(writeTemp(t, box))
+	if !errors.Is(err, ErrHeaderTooLarge) {
+		t.Fatalf("err = %v; want ErrHeaderTooLarge", err)
+	}
+
+	huge := ftypLarge("mif1", longBrandList(1100)...)
+	binary.BigEndian.PutUint64(huge[8:16], 1<<40)
+	if _, err := DetectFile(writeTemp(t, huge)); !errors.Is(err, ErrHeaderTooLarge) {
+		t.Fatalf("largesize err = %v; want ErrHeaderTooLarge", err)
+	}
+}
+
 func FuzzDetect(f *testing.F) {
 	f.Add([]byte{0xFF, 0xD8, 0xFF})
 	f.Add(ftyp("mif1", "heic"))

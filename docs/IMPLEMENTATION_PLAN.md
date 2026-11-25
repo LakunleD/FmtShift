@@ -23,50 +23,58 @@ TESTING.md. The Wails desktop application is a subsequent release.
 
 ## 3. M0: Repository and codec feasibility
 
-- [ ] Initialize the Go module using the actual GitHub repository path.
-- [ ] Add AGENTS.md, README.md, MIT LICENSE and project documentation.
-- [ ] Add Makefile, .gitignore and initial GitHub Actions workflow.
-- [ ] Build the same minimal converter behind a codec interface using two
-  approaches:
-  - libvips/libheif through cgo;
-  - a CGo-free build using Go JPEG/PNG support and embedded HEIC/WebP codecs,
-    evaluating packages such as `gen2brain/heic` and `gen2brain/webp` without
-    assuming they preserve metadata or colour information.
-- [ ] Validate HEIC decoding and JPEG, PNG and WebP encoding for both paths.
-- [ ] Benchmark representative single and batch conversions, peak memory and
-  release artifact size.
-- [ ] Test HEIF container orientation, EXIF orientation normalization, alpha,
-  EXIF/XMP, ICC/NCLX profiles, Display P3, 10-bit and HDR/gain-map behavior.
-- [ ] Verify that the primary image is converted while auxiliary thumbnails,
-  depth maps and gain maps do not cause a normal photo to be rejected.
-- [ ] Build and run minimal artifacts on macOS and Linux, and document Windows
-  feasibility for v0.2.
-- [ ] For the native path, document target C toolchains, bundled or external
-  libraries, clean-machine installation and redistribution licenses.
-- [ ] Ensure any evaluated libheif distribution excludes GPL encoders such as
-  x265.
-- [ ] For the CGo-free path, force and verify the embedded fallback rather than
-  accidentally loading an installed shared library.
-- [ ] Audit the source and transitive licenses of embedded Wasm or transpiled
-  codecs; a single binary does not remove redistribution obligations.
-- [ ] Prove that each candidate artifact can be installed and run on clean
-  macOS and Linux environments.
-- [ ] Record the selected codec approach and fallback options in ARCHITECTURE.md.
+Decision: libvips/libheif through cgo was selected without building the
+CGo-free comparison. The rationale, measurements and known issues are
+recorded in ARCHITECTURE.md §5.4.
 
-Acceptance criteria: Both candidates convert the agreed fixture matrix on
-macOS and Linux. Measurements and known metadata/colour limitations are
-recorded. Packaging, security maintenance and license obligations are
-understood, and one approach is selected before the engine is implemented.
+- [x] Initialize the Go module using the actual GitHub repository path.
+- [x] Add AGENTS.md and project documentation.
+- [ ] Add README.md and MIT LICENSE.
+- [x] Add Makefile, .gitignore and initial GitHub Actions workflow.
+- [ ] Push to GitHub and confirm the CI workflow passes on Linux and macOS.
+- [x] Build a minimal libvips converter behind a codec interface.
+- [x] Validate HEIC decoding and JPEG, PNG and WebP encoding.
+- [x] Benchmark representative single and batch conversions, peak memory and
+  binary size.
+- [x] Test HEIF container orientation, EXIF orientation normalization, alpha,
+  ICC profiles, Display P3 and 10-bit input with synthetic fixtures.
+- [x] Define and test the HEIF colour policy with synthetic fixtures: NCLX
+  Display P3 is converted correctly, PQ/HLG HDR and NCLX BT.2020 are
+  rejected explicitly.
+- [ ] Verify with real camera samples: iPhone files carrying both `irot` and
+  EXIF orientation, iPhone HDR (gain map) photos, and PQ/HLG HEICs.
+- [x] Verify that a primary image with a thumbnail converts and that multiple
+  top-level images are rejected.
+- [ ] Verify depth-map and gain-map auxiliary images are ignored.
+- [x] Build and run a minimal artifact on macOS.
+- [ ] Build and run a minimal artifact on Linux, and document Windows
+  feasibility for v0.2.
+- [ ] Decide the packaging model per platform (bundled minimal libvips or
+  package-manager dependency) and document target toolchains, clean-machine
+  installation and redistribution licenses.
+- [ ] Ensure the shipped libheif excludes GPL encoders such as x265.
+- [ ] Review HEVC decoder (libde265) distribution, including patent
+  considerations, before release.
+- [ ] Prove that a release artifact can be installed and run on clean macOS
+  and Linux environments.
+- [x] Record the selected codec approach and fallback options in ARCHITECTURE.md.
+
+Acceptance criteria: The libvips converter passes the fixture matrix on macOS
+and Linux. Measurements and known metadata/colour limitations are recorded.
+Packaging, security maintenance and license obligations are understood
+before M4 begins.
 
 ## 4. M1: Core conversion engine
 
 - [ ] Define Format, ConversionRequest and ConversionResult models.
 - [ ] Implement format detection and supported-format registry.
-- [ ] Implement codec abstraction and the adapter selected by M0.
+- [x] Implement codec abstraction and the adapter selected by M0.
 - [ ] Validate quality, image dimensions and supported still-image inputs.
 - [ ] Apply HEIF transforms exactly once and normalize preserved EXIF
   orientation to 1.
-- [ ] Implement the selected ICC/sRGB and HDR-to-SDR policy.
+- [ ] Map codec colour errors (`ErrHDR`, `ErrColourSpace`) to clear user
+  messages. The colour policy itself is implemented in the codec (M0);
+  HDR-to-SDR tone mapping is deferred.
 - [ ] Implement alpha compositing for JPEG outputs.
 - [ ] Implement deterministic output names and collision handling.
 - [ ] Reject source/destination aliases, including symlinks and hard links.
@@ -227,7 +235,8 @@ work are estimated separately.
 
 ## 13. Immediate next task
 
-Start M0: initialize the repository and build matching HEIC-to-JPEG proof-of-
-concepts for the cgo/native and CGo-free approaches. Compare their fixture
-matrix, measurements, packaging and licenses before implementing the complete
-conversion engine.
+Finish M0: push to GitHub so CI validates the Linux build, then decide the
+packaging model (minimal bundled libvips versus package-manager dependency)
+with a clean-machine install test, including the x265 and HEVC licensing
+review. M1 can proceed in parallel because the engine depends only on the
+codec interface.

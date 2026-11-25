@@ -57,6 +57,12 @@ var (
 	ErrMultipleImages = errors.New("input contains multiple images")
 	// ErrTooLarge means the input exceeds Options.MaxPixels.
 	ErrTooLarge = errors.New("image dimensions exceed limit")
+	// ErrHDR means the input uses an HDR transfer function (PQ or HLG).
+	// Converting it to SDR requires tone mapping, which is not implemented.
+	ErrHDR = errors.New("HDR input is not supported")
+	// ErrColourSpace means the input's colour space cannot be represented
+	// faithfully, e.g. wide-gamut primaries signalled without an ICC profile.
+	ErrColourSpace = errors.New("unsupported colour space")
 	// ErrDecode means the input could not be opened as an image, usually
 	// because it is corrupt or truncated.
 	ErrDecode = errors.New("cannot decode image")

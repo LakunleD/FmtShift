@@ -27,10 +27,25 @@ typedef struct {
 	int has_exif;
 } fs_info;
 
+/* Colour signalling of a HEIF primary image (fmtshift_heif.c). Values are
+ * ITU-T H.273 code points; -1 when there is no NCLX box.
+ */
+typedef struct {
+	int has_icc;
+	int primaries;
+	int transfer;
+} fs_heif_colour;
+
 int fs_init(void);
 int fs_has_operation(const char *name);
-int fs_convert(const char *in, int in_fmt, const char *out, int out_fmt,
-	int quality, int strip, gint64 max_pixels);
+
+/* assign_profile, if not NULL, names a libvips built-in ICC profile (e.g.
+ * "p3") to attach when the decoded image has none, describing pixels that
+ * are already in that colour space.
+ */
+int fs_convert(int in_fd, int in_fmt, const char *out, int out_fmt,
+	int quality, int strip, gint64 max_pixels, const char *assign_profile);
 int fs_probe(const char *path, fs_info *info);
+int fs_heif_colour_info(int fd, fs_heif_colour *out);
 
 #endif

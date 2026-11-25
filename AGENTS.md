@@ -12,8 +12,8 @@ FmtShift will provide a CLI and, eventually, a desktop application. All file con
 
 - Language: Go
 - CLI framework: Cobra
-- Image processing: selected by the M0 codec evaluation; candidates include
-  libvips/libheif and CGo-free Go/Wasm codecs
+- Image processing: libvips through cgo, with HEIC decoding by libheif
+  (selected in M0; see `docs/ARCHITECTURE.md` §5.4)
 - File monitoring: fsnotify
 - Desktop application: Wails (future)
 

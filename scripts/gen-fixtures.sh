@@ -53,12 +53,30 @@ vips copy "$work/red.v" "$work/red.png" --interpretation srgb
 vips icc_transform "$work/red.png" "$work/p3.v" p3 --input-profile srgb --intent relative
 vips heifsave "$work/p3.v" "$out/heic/display-p3.heic" --Q 95 --compression hevc
 
-# 10-bit HEIC from a 16-bit horizontal gradient (0 → 65535).
+# Same P3 pixel values, but colour described only by an NCLX box
+# (primaries 12 = P3-D65, transfer 13 = sRGB curve) with no ICC profile.
+vips copy "$work/p3.v" "$work/p3-noicc.png[keep=none]"
+heif-enc -q 95 --colour_primaries 12 --transfer_characteristic 13 \
+	--matrix_coefficients 6 -o "$out/heic/nclx-p3.heic" "$work/p3-noicc.png"
+
+# 10-bit SDR HEIC from a 16-bit horizontal gradient (0 → 65535).
 vips linear "$work/x.v" "$work/g16.v" 1040 0
 vips cast "$work/g16.v" "$work/g16u.v" ushort
 vips bandjoin "$work/g16u.v $work/g16u.v $work/g16u.v" "$work/rgb16.v"
 vips copy "$work/rgb16.v" "$work/rgb16.png" --interpretation rgb16
 heif-enc -q 95 -b 10 -o "$out/heic/10bit.heic" "$work/rgb16.png"
+
+# HDR: 10-bit BT.2020 with PQ (16) and HLG (18) transfer functions. The pixel
+# content is irrelevant; these must be rejected, not converted as SDR.
+heif-enc -q 90 -b 10 --colour_primaries 9 --transfer_characteristic 16 \
+	--matrix_coefficients 9 -o "$out/heic/hdr-pq.heic" "$work/rgb16.png"
+heif-enc -q 90 -b 10 --colour_primaries 9 --transfer_characteristic 18 \
+	--matrix_coefficients 9 -o "$out/heic/hdr-hlg.heic" "$work/rgb16.png"
+
+# Wide-gamut SDR: BT.2020 primaries with the BT.2020 10-bit SDR transfer (14)
+# and no ICC profile. libvips has no built-in BT.2020 profile, so v0.1 rejects it.
+heif-enc -q 90 -b 10 --colour_primaries 9 --transfer_characteristic 14 \
+	--matrix_coefficients 9 -o "$out/heic/nclx-bt2020-sdr.heic" "$work/rgb16.png"
 
 # --- JPEG ---------------------------------------------------------------
 # EXIF orientation 6 (rotate 90° clockwise to display).

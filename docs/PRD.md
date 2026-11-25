@@ -174,15 +174,14 @@ The desktop application should not require the CLI to be installed separately.
 
 - Go for the reusable core and CLI.
 - Cobra for CLI commands.
-- A codec abstraction with two M0 candidates: libvips/libheif through cgo, and
-  a CGo-free build using Go's JPEG/PNG support plus embedded HEIC/WebP codecs.
+- libvips with libheif through cgo, behind a codec abstraction.
 - fsnotify for directory monitoring.
 - Wails for the future desktop application.
 
-M0 must compare correctness, performance, memory use, metadata, colour
-management, binary size, clean-machine installation and licensing before an
-image-processing stack is selected. Any libheif build used for decoding must
-exclude GPL encoders such as x265. FmtShift source will use the MIT license;
+M0 selected libvips with libheif through cgo; see ARCHITECTURE.md §5.4.
+Packaging, clean-machine installation and licensing must still be validated
+before release. Any libheif build shipped with FmtShift must exclude GPL
+encoders such as x265. FmtShift source will use the MIT license;
 third-party components retain their own licenses and require notices and any
 other applicable distribution materials.
 

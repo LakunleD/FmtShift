@@ -309,8 +309,14 @@ go tool cover -html=coverage.out
 ### Benchmarks
 
 ```bash
-go test -bench=. -benchmem ./...
+make bench
 ```
+
+`make bench` first generates synthetic 12-megapixel HEIC inputs in
+`testdata/bench/` (git-ignored) with `scripts/gen-bench-images.sh`, then runs
+the codec benchmarks. Benchmarks report MP/s; Go's `-benchmem` cannot see
+libvips' C allocations, so peak memory is measured with `/usr/bin/time -l`
+on the built binary. Codec benchmarks skip when the inputs are missing.
 
 ## 17. Coverage Requirements
 

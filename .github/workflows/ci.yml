@@ -27,7 +27,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libvips-dev libheif-plugin-libde265 pkg-config
+            libvips-dev libheif-dev libheif-plugin-libde265 pkg-config
 
       - name: Install libvips (macOS)
         if: runner.os == 'macOS'
