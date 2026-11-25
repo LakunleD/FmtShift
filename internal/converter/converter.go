@@ -203,11 +203,7 @@ func (c *Converter) validate(req Request) (int, error) {
 // requested. The name is the source name with its last extension replaced:
 // "IMG 1.HEIC" → "IMG 1.jpg", "archive.tar.heic" → "archive.tar.jpg".
 func outputPath(req Request) (string, error) {
-	dir := req.OutputDir
-	if dir == "" {
-		dir = filepath.Dir(req.SourcePath)
-	}
-
+	dir := outputDir(req)
 	fi, err := os.Stat(dir)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -223,12 +219,25 @@ func outputPath(req Request) (string, error) {
 		return "", fmt.Errorf("%w: output %s is not a directory", ErrInvalidOptions, dir)
 	}
 
-	base := filepath.Base(req.SourcePath)
+	return filepath.Join(dir, outputName(req.SourcePath, req.Format)), nil
+}
+
+// outputDir is the directory req writes into.
+func outputDir(req Request) string {
+	if req.OutputDir != "" {
+		return req.OutputDir
+	}
+	return filepath.Dir(req.SourcePath)
+}
+
+// outputName is the output file name for src in format f.
+func outputName(src string, f format.Format) string {
+	base := filepath.Base(src)
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
 	if stem == "" { // a dotfile such as ".heic"
 		stem = base
 	}
-	return filepath.Join(dir, stem+req.Format.Extension()), nil
+	return stem + f.Extension()
 }
 
 // checkNotSource rejects a destination that is the source file under another

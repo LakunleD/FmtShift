@@ -91,13 +91,16 @@ pass. The engine has no dependency on Cobra or Wails.
 
 ## 5. M2: CLI and first development release
 
-- [ ] Create cmd/fmtshift/main.go and the Cobra root command.
-- [ ] Implement convert, formats, version and help.
-- [ ] Add --to, --output, --quality, --overwrite and --strip-metadata.
-- [ ] Add human-readable output, logging and exit code mapping.
-- [ ] Add cancellation through context and operating-system signals.
-- [ ] Document local installation and common usage.
-- [ ] Build the initial executable and run end-to-end tests.
+- [x] Create cmd/fmtshift/main.go and the Cobra root command.
+- [x] Implement convert, formats, version and help.
+- [x] Add --to, --output, --quality, --overwrite and --strip-metadata.
+- [x] Add human-readable output and exit code mapping; `--verbose` shows
+  error detail and timings, `--quiet` shows only errors.
+- [ ] Structured logging with slog (deferred until there is more to log,
+  e.g. batch and watch progress).
+- [x] Add cancellation through context and operating-system signals.
+- [x] Document local installation and common usage (README.md).
+- [x] Build the initial executable and run end-to-end tests.
 
 Acceptance criteria:
 
@@ -115,7 +118,9 @@ a readable output image without modifying the source.
 - [ ] Support recursive traversal and input-format filters.
 - [ ] Preserve relative directory structure for recursive output.
 - [ ] Implement bounded worker pool and job cancellation.
-- [ ] Prevent concurrent jobs from targeting the same output.
+- [ ] Prevent concurrent jobs from targeting the same output. Preflight
+  detection exists (`converter.DuplicateDestinations`, used by `convert`
+  since M2); M3 must also apply it to files discovered in directories.
 - [ ] Report converted, skipped and failed files.
 - [ ] Implement platform-appropriate JSON configuration storage.
 - [ ] Add config set, get, show and path.

@@ -34,13 +34,17 @@ fmtshift convert <input...> [flags]
 | Flag | Description | Default |
 |---|---|---|
 | --to, -t | Output format | jpeg |
-| --from | Filter input formats | All supported |
-| --output, -o | Output directory | Source directory |
+| --from | Filter input formats (M3) | All supported |
+| --output, -o | Output directory, created if missing | Source directory |
 | --quality, -q | Compression quality (1–100) | 85 |
-| --recursive, -r | Include subdirectories | false |
+| --recursive, -r | Include subdirectories (M3) | false |
 | --overwrite | Overwrite existing output files | false |
 | --strip-metadata | Remove image metadata | false |
-| --workers, -w | Maximum concurrent conversions | 2 |
+| --workers, -w | Maximum concurrent conversions (M3) | 2 |
+
+Flags marked M3 are not accepted yet; using them is a usage error (exit 2).
+Until M3, inputs must be files: a directory argument is reported as a failed
+input.
 
 ### Single File Conversion
 
@@ -103,10 +107,38 @@ fmtshift convert photo.heic --to jpeg --quality 90
 Conversion complete
 
 Converted: 24
-Skipped:    3
-Failed:     1
+Skipped:   3
+Failed:    1
 Duration:  4.2s
 ```
+
+The summary is printed when more than one input is given. Per-file
+`Converted` and `Skipped` lines go to stdout (suppressed by `--quiet`);
+`Error:` lines go to stderr.
+
+### Outcomes
+
+Each input ends in exactly one outcome:
+
+| Outcome | When | Counted as | Affects exit code |
+|---|---|---|---|
+| Converted | Output written | Converted | — |
+| Skipped (exists) | Output exists and `--overwrite` not given; prints a hint | Skipped | No: re-running a command is safe and exits 0 |
+| Skipped (same format) | Input already in the target format | Skipped | Not eligible: if no input is eligible, exit 4 |
+| Failed | Missing, unreadable, unsupported (HDR, multi-image, unknown format), corrupt, a directory, or the output would replace the source | Failed | Exit 1 |
+| Failed (duplicate) | Would write the same output as an earlier input in the same command, e.g. `IMG_1.HEIC` and `IMG_1.PNG` both becoming `IMG_1.jpg`; detected before anything is converted; the first input still converts | Failed | Exit 1, with or without `--overwrite` |
+| Cancelled | Ctrl+C before the input's output was published | Cancelled | Exit 130 |
+
+Exit code precedence: 130 if interrupted, else 1 if any input failed, else 4
+if nothing was converted or skipped-because-exists, else 0.
+
+### Interrupting
+
+The first Ctrl+C (or SIGTERM) lets the current file finish decoding,
+discards its output, starts nothing further and exits 130. libvips cannot
+abort an image mid-way, so this can take as long as one conversion. A second
+Ctrl+C quits immediately; temporary files may then be left behind as
+`.<name>.*.fmtshift-tmp`.
 
 ## 4. Watch Command (v0.2)
 
@@ -262,9 +294,15 @@ Platform: darwin/arm64
 | Flag | Description |
 |---|---|
 | --help, -h | Display help |
-| --verbose, -v | Enable verbose logging |
-| --quiet | Suppress informational output |
+| --verbose, -v | Show error details and per-file timings |
+| --quiet | Hide per-file and summary messages; errors still print |
 | --json | Return machine-readable command results (v0.2) |
+
+`--quiet` suppresses progress output only: the `Converted`/`Skipped` lines
+and the batch summary. Errors are always printed to stderr, and output a
+command exists to produce (the `formats` table, `version`) is printed
+regardless, as with `git --quiet`. `--verbose` and `--quiet` cannot be
+combined.
 
 The JSON flag is intended for scripting and automation.
 
