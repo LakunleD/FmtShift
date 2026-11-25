@@ -7,6 +7,7 @@ import (
 	"io/fs"
 
 	"github.com/lakunled/fmtshift/internal/codecs"
+	"github.com/lakunled/fmtshift/internal/filesystem"
 )
 
 // Error kinds returned by Convert. Every error from Convert matches exactly
@@ -55,9 +56,19 @@ func isKind(err error) bool {
 	return false
 }
 
-// fsError classifies an OS error.
-func fsError(err error) error {
+// FSError classifies an error from opening, reading or walking an input
+// using this package's kinds, wrapping the original. Code outside the engine
+// that touches inputs (such as batch discovery) uses it so its errors are
+// reported exactly as Convert's would be. An error that already carries a
+// kind is returned unchanged; nil stays nil.
+func FSError(err error) error {
 	switch {
+	case err == nil:
+		return nil
+	case isKind(err):
+		return err
+	case errors.Is(err, filesystem.ErrNotRegular):
+		return fmt.Errorf("%w: %w", ErrUnsupportedInput, err)
 	case errors.Is(err, fs.ErrNotExist):
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
 	case errors.Is(err, fs.ErrPermission):
@@ -65,6 +76,8 @@ func fsError(err error) error {
 	}
 	return fmt.Errorf("%w: %w", ErrConversionFailed, err)
 }
+
+func fsError(err error) error { return FSError(err) }
 
 // codecError classifies an error from codecs.Codec.Convert. Source I/O
 // causes are checked before codec kinds: an error that wraps both

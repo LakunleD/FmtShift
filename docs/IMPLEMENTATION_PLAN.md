@@ -114,19 +114,23 @@ a readable output image without modifying the source.
 
 ## 6. M3: Batch processing and configuration
 
-- [ ] Discover eligible files from multiple paths and directories.
-- [ ] Support recursive traversal and input-format filters.
-- [ ] Preserve relative directory structure for recursive output.
-- [ ] Implement bounded worker pool and job cancellation.
-- [ ] Prevent concurrent jobs from targeting the same output. Preflight
-  detection exists (`converter.DuplicateDestinations`, used by `convert`
-  since M2); M3 must also apply it to files discovered in directories.
-- [ ] Report converted, skipped and failed files.
+- [x] Discover eligible files from multiple paths and directories
+  (`internal/batch`).
+- [x] Support recursive traversal and input-format filters.
+- [x] Preserve relative directory structure for recursive output.
+- [x] Implement bounded worker pool and job cancellation.
+- [x] Prevent concurrent jobs from targeting the same output (duplicate
+  preflight over all discovered files).
+- [x] Report converted, skipped and failed files.
 - [ ] Implement platform-appropriate JSON configuration storage.
 - [ ] Add config set, get, show and path.
 - [ ] Implement flag > configuration > default precedence.
 - [ ] Validate and safely persist configuration changes.
-- [ ] Add integration tests and representative batch benchmarks.
+- [x] Add batch tests (discovery, worker limit, cancellation, duplicates)
+  and CLI folder tests.
+- [ ] Add representative batch benchmarks (100 and 1,000 images). Manual
+  measurement so far: 8 × 12 MP HEIC → JPEG takes 5.0 s with 1 worker and
+  1.2 s with 4, peak RSS 257 MB and 921 MB.
 
 Acceptance criteria: A batch of mixed supported and unsupported files is
 processed correctly. Individual failures do not stop unrelated jobs.

@@ -99,8 +99,10 @@ func (c *Converter) Convert(ctx context.Context, req Request) (res Result, err e
 		return res, err
 	}
 
-	src, err := openSource(req.SourcePath)
-	if err != nil {
+	src, err := filesystem.OpenRegular(req.SourcePath)
+	if errors.Is(err, filesystem.ErrNotRegular) {
+		return res, fmt.Errorf("%w: %w", ErrUnsupportedInput, err)
+	} else if err != nil {
 		return res, fsError(err)
 	}
 	defer src.Close()
@@ -108,9 +110,6 @@ func (c *Converter) Convert(ctx context.Context, req Request) (res Result, err e
 	srcInfo, err := src.Stat()
 	if err != nil {
 		return res, fsError(err)
-	}
-	if !srcInfo.Mode().IsRegular() {
-		return res, fmt.Errorf("%w: %s is not a regular file", ErrUnsupportedInput, req.SourcePath)
 	}
 	res.SourceSize = srcInfo.Size()
 

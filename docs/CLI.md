@@ -34,17 +34,33 @@ fmtshift convert <input...> [flags]
 | Flag | Description | Default |
 |---|---|---|
 | --to, -t | Output format | jpeg |
-| --from | Filter input formats (M3) | All supported |
+| --from | Only convert these input formats, by content (`heic`, `heic,png`) | All supported |
 | --output, -o | Output directory, created if missing | Source directory |
 | --quality, -q | Compression quality (1–100) | 85 |
-| --recursive, -r | Include subdirectories (M3) | false |
+| --recursive, -r | Include subfolders; with `--output`, recreate them under it | false |
 | --overwrite | Overwrite existing output files | false |
 | --strip-metadata | Remove image metadata | false |
-| --workers, -w | Maximum concurrent conversions (M3) | 2 |
+| --workers, -w | Concurrent conversions (1–64) | 2 |
 
-Flags marked M3 are not accepted yet; using them is a usage error (exit 2).
-Until M3, inputs must be files: a directory argument is reported as a failed
-input.
+Each worker can use roughly 250 MB for a 12-megapixel photo, so peak memory
+grows with `--workers` (about 920 MB at 4 on the reference machine, for 4×
+the throughput of 1).
+
+### Folder inputs
+
+A folder argument converts the supported images directly inside it, or in
+all its subfolders with `--recursive`. While scanning folders:
+
+- Hidden files and folders (names starting with `.`) are skipped, including
+  FmtShift's own temporary files.
+- Symlinked files are followed; symlinked folders are not, so a link cannot
+  cause a loop or escape the tree.
+- If `--output` is inside a scanned folder, it is not scanned, so re-runs do
+  not reconvert earlier outputs.
+- Files that are not supported images, files already in the target format and
+  files excluded by `--from` are counted as skipped but only listed with
+  `--verbose`. The same situations for a file named explicitly are always
+  reported.
 
 ### Single File Conversion
 
@@ -112,7 +128,9 @@ Failed:    1
 Duration:  4.2s
 ```
 
-The summary is printed when more than one input is given. Per-file
+The summary is printed when there is more than one input or any folder
+input. Results are printed as conversions finish, so with several workers
+their order can vary. Per-file
 `Converted` and `Skipped` lines go to stdout (suppressed by `--quiet`);
 `Error:` lines go to stderr.
 
@@ -125,8 +143,12 @@ Each input ends in exactly one outcome:
 | Converted | Output written | Converted | — |
 | Skipped (exists) | Output exists and `--overwrite` not given; prints a hint | Skipped | No: re-running a command is safe and exits 0 |
 | Skipped (same format) | Input already in the target format | Skipped | Not eligible: if no input is eligible, exit 4 |
-| Failed | Missing, unreadable, unsupported (HDR, multi-image, unknown format), corrupt, a directory, or the output would replace the source | Failed | Exit 1 |
+| Skipped (filtered) | Excluded by `--from` | Skipped | Not eligible |
+| Skipped (unsupported) | Found in a folder but not a supported image | Skipped | Not eligible |
+| Failed | Missing, unreadable, unsupported (HDR, multi-image, or a named file that is not an image), corrupt, or the output would replace the source | Failed | Exit 1 |
 | Failed (duplicate) | Would write the same output as an earlier input in the same command, e.g. `IMG_1.HEIC` and `IMG_1.PNG` both becoming `IMG_1.jpg`; detected before anything is converted; the first input still converts | Failed | Exit 1, with or without `--overwrite` |
+| Failed (replaces an input) | With `--overwrite`, the output would replace another input of the same command, even one that is skipped or filtered, e.g. `photo.png` → `photo.jpg` next to an original `photo.jpg`. FmtShift cannot tell an original from an earlier output, so it never replaces either; use `--output` | Failed | Exit 1. Without `--overwrite` the same case is "Skipped (exists)" |
+| Failed (creates an input) | The output would be written at the path of another input that does not exist, e.g. `photo.png photo.jpg` with `photo.jpg` missing. The missing input is reported as not found, never created and then "found" | Failed | Exit 1, with or without `--overwrite`; decided before converting, so independent of `--workers` |
 | Cancelled | Ctrl+C before the input's output was published | Cancelled | Exit 130 |
 
 Exit code precedence: 130 if interrupted, else 1 if any input failed, else 4
@@ -134,11 +156,21 @@ if nothing was converted or skipped-because-exists, else 0.
 
 ### Interrupting
 
-The first Ctrl+C (or SIGTERM) lets the current file finish decoding,
-discards its output, starts nothing further and exits 130. libvips cannot
-abort an image mid-way, so this can take as long as one conversion. A second
-Ctrl+C quits immediately; temporary files may then be left behind as
-`.<name>.*.fmtshift-tmp`.
+The first Ctrl+C (or SIGTERM) starts nothing further, lets the conversions
+already in progress finish decoding, discards their outputs and exits 130.
+Up to `--workers` files (2 by default) can be in progress, and libvips cannot
+abort an image mid-way, so stopping can take as long as the slowest of them,
+using their memory until then. A second Ctrl+C quits immediately; temporary
+files may then be left behind as `.<name>.*.fmtshift-tmp`.
+
+Ctrl+C while folders are still being scanned stops the scan at once;
+nothing is converted. Exit code 130 takes precedence over every other
+outcome, so an interrupted run is never reported as "nothing to convert"
+(4) or as a success.
+
+Inputs are opened without blocking, so a named pipe (FIFO) given as an
+input or found in a folder is rejected or skipped immediately rather than
+hanging the command.
 
 ## 4. Watch Command (v0.2)
 

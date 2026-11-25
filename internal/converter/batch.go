@@ -1,19 +1,21 @@
 package converter
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 
 	"github.com/lakunled/fmtshift/internal/codecs"
-	"github.com/lakunled/fmtshift/internal/format"
+	"github.com/lakunled/fmtshift/internal/filesystem"
 )
 
 // Destination returns the output path req would write, without converting
 // or creating anything. ok is false when req would not produce an output
-// because its source is missing, unreadable, unsupported or already in the
-// target format; Convert reports the reason for those.
+// because its source is missing, not a regular file (including a FIFO,
+// which is rejected without blocking), unsupported or already in the target
+// format; Convert reports the reason for those.
 func (c *Converter) Destination(req Request) (path string, ok bool) {
-	f, err := format.DetectFile(req.SourcePath)
+	f, err := filesystem.DetectFormat(req.SourcePath)
 	if err != nil || f == req.Format || !codecs.CanRead(c.caps, f) {
 		return "", false
 	}
@@ -35,15 +37,22 @@ func (c *Converter) Destination(req Request) (path string, ok bool) {
 // and ignoring case, matching the default macOS and Windows filesystems. On
 // a case-sensitive filesystem this is conservative: names differing only in
 // case are reported as duplicates although they could coexist.
-func (c *Converter) DuplicateDestinations(reqs []Request) map[int]int {
+//
+// It reads each source's header, so for large batches it stops early when
+// ctx is cancelled; the partial result is then irrelevant because no
+// conversion will start.
+func (c *Converter) DuplicateDestinations(ctx context.Context, reqs []Request) map[int]int {
 	first := map[string]int{}
 	dups := map[int]int{}
 	for i, req := range reqs {
+		if ctx.Err() != nil {
+			break
+		}
 		dst, ok := c.Destination(req)
 		if !ok {
 			continue
 		}
-		key := destinationKey(dst)
+		key := PathKey(dst)
 		if j, seen := first[key]; seen {
 			dups[i] = j
 			continue
@@ -53,10 +62,13 @@ func (c *Converter) DuplicateDestinations(reqs []Request) map[int]int {
 	return dups
 }
 
-// destinationKey normalises an output path for comparison: absolute, with
-// symlinks in its directory resolved where the directory exists, and
-// case-folded.
-func destinationKey(path string) string {
+// PathKey normalises a file path for "is this the same directory entry"
+// comparisons between sources and destinations: absolute, with symlinks in
+// its directory resolved where the directory exists, and case-folded to
+// match case-insensitive filesystems (conservative on case-sensitive ones).
+// The final component is not resolved, because publishing replaces the
+// directory entry itself, never the file a symlink points to.
+func PathKey(path string) string {
 	dir, name := filepath.Split(path)
 	if dir == "" {
 		dir = "."

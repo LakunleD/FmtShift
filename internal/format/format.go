@@ -165,6 +165,9 @@ func ftypBox(header []byte) (start int, size uint64, ok bool) {
 // DetectFile reads the start of the file at path and identifies its format.
 // For HEIF files it reads the whole declared ftyp box, up to MaxFtypSize, so
 // compatible brands are never missed because of a fixed read size.
+//
+// DetectFile uses a plain open, which blocks if path is a FIFO with no
+// writer. For user-supplied inputs use filesystem.DetectFormat instead.
 func DetectFile(path string) (Format, error) {
 	f, err := os.Open(path)
 	if err != nil {

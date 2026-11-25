@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/lakunled/fmtshift/internal/codecs"
+	"github.com/lakunled/fmtshift/internal/filesystem"
 	"github.com/lakunled/fmtshift/internal/format"
 )
 
@@ -547,5 +548,32 @@ func TestEveryErrorHasOneKind(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%v matches %d kinds; want 1", err, n)
 		}
+	}
+}
+
+func TestFSError(t *testing.T) {
+	eio := errors.New("input/output error")
+	tests := []struct {
+		in   error
+		want error
+	}{
+		{fs.ErrNotExist, ErrNotFound},
+		{&fs.PathError{Op: "open", Path: "x", Err: fs.ErrPermission}, ErrPermission},
+		{fmt.Errorf("wrapped: %w", filesystem.ErrNotRegular), ErrUnsupportedInput},
+		{eio, ErrConversionFailed},
+		{fmt.Errorf("%w: already classified", ErrCorrupt), ErrCorrupt},
+	}
+	for _, tt := range tests {
+		got := FSError(tt.in)
+		if !errors.Is(got, tt.want) || !errors.Is(got, tt.in) {
+			t.Errorf("FSError(%v) = %v; want %v wrapping the original", tt.in, got, tt.want)
+		}
+	}
+	if FSError(nil) != nil {
+		t.Error("FSError(nil) != nil")
+	}
+	// An already-classified error is not wrapped again.
+	if e := fmt.Errorf("%w: x", ErrCorrupt); FSError(e) != e {
+		t.Error("classified error was re-wrapped")
 	}
 }

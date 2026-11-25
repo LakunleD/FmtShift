@@ -8,9 +8,9 @@ $ fmtshift convert IMG_0001.HEIC
 Converted IMG_0001.HEIC -> IMG_0001.jpg
 ```
 
-> **Status:** early development (pre-v0.1). Single-file and multi-file
-> conversion work; folder conversion, configuration and directory watching
-> are planned. There are no release binaries yet; build from source below.
+> **Status:** early development (pre-v0.1). File and folder conversion work;
+> saved configuration and directory watching are planned. There are no
+> release binaries yet; build from source below.
 
 ## Supported formats
 
@@ -57,6 +57,8 @@ Homebrew's keg-only libarchive to `PKG_CONFIG_PATH`, which libvips needs.
 fmtshift convert photo.heic                          # -> photo.jpg next to it
 fmtshift convert photo.heic --to png                 # PNG instead
 fmtshift convert *.HEIC --output ./converted         # into another folder
+fmtshift convert ~/Pictures/Trip --from heic         # every HEIC in a folder
+fmtshift convert ./photos -r -o ./jpegs -w 4         # subfolders too, 4 at a time
 fmtshift convert photo.heic --quality 90             # JPEG/WebP quality 1-100 (default 85)
 fmtshift convert photo.heic --strip-metadata         # remove EXIF, location, etc.
 fmtshift convert photo.heic --overwrite              # replace an existing photo.jpg
@@ -66,9 +68,9 @@ fmtshift version
 
 What FmtShift guarantees:
 
-- **Originals are never modified**, and an output is never written over its
-  own source, even with `--overwrite` (for example, a HEIC file misnamed
-  `photo.jpg`).
+- **Originals are never modified**. An output is never written over its own
+  source or over any other file you are converting, even with `--overwrite`
+  (for example, `photo.png` → `photo.jpg` next to an original `photo.jpg`).
 - **Existing files are kept** unless you pass `--overwrite`; they are reported
   as skipped, so re-running a command is safe.
 - **No partial files**: outputs appear only when complete.
