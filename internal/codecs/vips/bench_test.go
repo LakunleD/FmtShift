@@ -67,7 +67,7 @@ func BenchmarkConvert(b *testing.B) {
 			n := 0
 			for b.Loop() {
 				dst := filepath.Join(dir, strconv.Itoa(n)+tc.dst.Extension())
-				if err := c.Convert(context.Background(), src, format.HEIC, dst, tc.dst, opts); err != nil {
+				if err := convertPath(context.Background(), c, src, format.HEIC, dst, tc.dst, opts); err != nil {
 					b.Fatal(err)
 				}
 				os.Remove(dst)
@@ -96,7 +96,7 @@ func BenchmarkConvertWorkers(b *testing.B) {
 					sem <- struct{}{}
 					i := n.Add(1)
 					dst := filepath.Join(dir, strconv.FormatInt(i, 10)+".jpg")
-					err := c.Convert(context.Background(), src, format.HEIC, dst, format.JPEG, codecs.Options{Quality: 85})
+					err := convertPath(context.Background(), c, src, format.HEIC, dst, format.JPEG, codecs.Options{Quality: 85})
 					os.Remove(dst)
 					<-sem
 					if err != nil {

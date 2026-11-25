@@ -50,6 +50,24 @@ func WriteNew(dst string, write func(tmp string) error) error {
 	return nil
 }
 
+// WriteReplace creates or replaces dst. Like WriteNew, write fills a
+// temporary file next to dst; on success the temporary file is renamed over
+// dst, which replaces the directory entry atomically. If dst is a symlink or
+// hard link, only that name is replaced: the file it pointed to is never
+// opened or modified. On failure dst is left untouched.
+func WriteReplace(dst string, write func(tmp string) error) error {
+	tmp, err := createTemp(dst)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+
+	if err := write(tmp); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dst)
+}
+
 // createTemp creates a new, empty file next to dst with createMode (subject
 // to umask). os.CreateTemp is not used because it always creates files 0600.
 func createTemp(dst string) (string, error) {

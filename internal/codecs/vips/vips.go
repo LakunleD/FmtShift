@@ -92,14 +92,13 @@ var vipsErrMu sync.RWMutex
 
 // Convert implements codecs.Codec.
 //
-// The source is opened once. Its content is checked against srcFormat, and
-// HEIF colour inspection and decoding both read that same open file, so a
-// path replaced during conversion cannot pair one file's colour policy with
-// another file's pixels.
+// Everything reads the caller's open handle: the content check against
+// srcFormat, HEIF colour inspection and decoding. The path is never
+// reopened, so the caller's checks and this codec's work concern one file.
 //
 // libvips offers no cheap way to interrupt a running save, so ctx is only
 // checked before work starts.
-func (c *Codec) Convert(ctx context.Context, src string, srcFormat format.Format, dst string, dstFormat format.Format, opts codecs.Options) error {
+func (c *Codec) Convert(ctx context.Context, in *os.File, srcFormat format.Format, dst string, dstFormat format.Format, opts codecs.Options) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -122,18 +121,19 @@ func (c *Codec) Convert(ctx context.Context, src string, srcFormat format.Format
 		maxPixels = codecs.DefaultMaxPixels
 	}
 
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("%w: %v", codecs.ErrDecode, err)
-	}
-	defer in.Close()
+	src := in.Name()
+	// OS errors are wrapped with %w so callers can still see causes such as
+	// fs.ErrPermission.
 	if fi, err := in.Stat(); err != nil {
-		return fmt.Errorf("%w: %v", codecs.ErrDecode, err)
+		return fmt.Errorf("vips: %w", err)
 	} else if !fi.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s is not a regular file", codecs.ErrDecode, src)
 	}
 	if got, err := format.DetectReaderAt(in); err != nil {
-		return fmt.Errorf("%w: %s: %v", codecs.ErrDecode, src, err)
+		if errors.Is(err, format.ErrUnknown) || errors.Is(err, format.ErrHeaderTooLarge) {
+			return fmt.Errorf("%w: %s: %w", codecs.ErrDecode, src, err)
+		}
+		return fmt.Errorf("vips: %s: %w", src, err)
 	} else if got != srcFormat {
 		return fmt.Errorf("%w: %s contains %s, not %s", codecs.ErrDecode, src, got, srcFormat)
 	}

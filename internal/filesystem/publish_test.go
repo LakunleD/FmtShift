@@ -124,6 +124,75 @@ func TestWriteNewConcurrent(t *testing.T) {
 	}
 }
 
+func TestWriteReplace(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "out.jpg")
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteReplace(dst, writeString("new")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "new" {
+		t.Fatalf("content = %q; want new", b)
+	}
+	if got := entries(t, dir); len(got) != 1 {
+		t.Errorf("directory contains %v", got)
+	}
+}
+
+func TestWriteReplaceFailureKeepsOriginal(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "out.jpg")
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteReplace(dst, func(tmp string) error {
+		os.WriteFile(tmp, []byte("partial"), 0o600)
+		return errors.New("boom")
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if b, _ := os.ReadFile(dst); string(b) != "old" {
+		t.Fatalf("content = %q; original must be kept", b)
+	}
+	if got := entries(t, dir); len(got) != 1 {
+		t.Errorf("directory contains %v; temp file left behind", got)
+	}
+}
+
+// Replacing a symlink or hard link must replace only that name, never write
+// through it to the file it points to.
+func TestWriteReplaceDoesNotWriteThroughLinks(t *testing.T) {
+	for _, kind := range []string{"symlink", "hardlink"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "precious.heic")
+			if err := os.WriteFile(target, []byte("original photo"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dst := filepath.Join(dir, "out.jpg")
+			link := os.Symlink
+			if kind == "hardlink" {
+				link = os.Link
+			}
+			if err := link(target, dst); err != nil {
+				t.Skip(err)
+			}
+			if err := WriteReplace(dst, writeString("converted")); err != nil {
+				t.Fatal(err)
+			}
+			if b, _ := os.ReadFile(target); string(b) != "original photo" {
+				t.Fatalf("link target changed to %q", b)
+			}
+			if b, _ := os.ReadFile(dst); string(b) != "converted" {
+				t.Fatalf("dst = %q", b)
+			}
+		})
+	}
+}
+
 func TestWriteNewMissingDirectory(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "missing", "out.jpg")
 	if err := WriteNew(dst, writeString("x")); err == nil {

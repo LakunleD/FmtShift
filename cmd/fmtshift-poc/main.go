@@ -39,7 +39,12 @@ func main() {
 }
 
 func run(src, dst string, quality int, strip bool) error {
-	srcFmt, err := format.DetectFile(src)
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	srcFmt, err := format.DetectReaderAt(in)
 	if err != nil {
 		return fmt.Errorf("%s: %w", src, err)
 	}
@@ -54,7 +59,7 @@ func run(src, dst string, quality int, strip bool) error {
 
 	start := time.Now()
 	err = filesystem.WriteNew(dst, func(tmp string) error {
-		return codec.Convert(context.Background(), src, srcFmt, tmp, dstFmt, codecs.Options{
+		return codec.Convert(context.Background(), in, srcFmt, tmp, dstFmt, codecs.Options{
 			Quality:       quality,
 			StripMetadata: strip,
 		})

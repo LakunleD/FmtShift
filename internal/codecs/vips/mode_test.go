@@ -24,7 +24,7 @@ func TestConvertKeepsDestinationMode(t *testing.T) {
 		if err := os.Chmod(dst, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, dstFmt, defaultOpts); err != nil {
+		if err := convertPath(context.Background(), c, fixture("heic/gradient.heic"), format.HEIC, dst, dstFmt, defaultOpts); err != nil {
 			t.Fatal(err)
 		}
 		fi, err := os.Stat(dst)

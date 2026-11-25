@@ -48,7 +48,7 @@ func TestSourceReplacedDuringConversion(t *testing.T) {
 	t.Cleanup(func() { testHookBeforeDecode = nil })
 
 	dst := filepath.Join(dir, "out.png")
-	if err := c.Convert(context.Background(), src, format.HEIC, dst, format.PNG, defaultOpts); err != nil {
+	if err := convertPath(context.Background(), c, src, format.HEIC, dst, format.PNG, defaultOpts); err != nil {
 		t.Fatal(err)
 	}
 	if !swapped {
@@ -98,7 +98,7 @@ func TestConcurrentErrorsAreAttributed(t *testing.T) {
 	solo := map[format.Format]string{}
 	for _, f := range formats {
 		src := writeCorrupt(t, dir, f, 0)
-		err := c.Convert(context.Background(), src, f, filepath.Join(dir, "solo.png"), format.PNG, defaultOpts)
+		err := convertPath(context.Background(), c, src, f, filepath.Join(dir, "solo.png"), format.PNG, defaultOpts)
 		if !errors.Is(err, codecs.ErrDecode) && !errors.Is(err, codecs.ErrConversion) {
 			t.Fatalf("%s: err = %v; want decode or conversion error", f, err)
 		}
@@ -118,7 +118,7 @@ func TestConcurrentErrorsAreAttributed(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				dst := filepath.Join(dir, filepath.Base(src)+".png")
-				err := c.Convert(context.Background(), src, f, dst, format.PNG, defaultOpts)
+				err := convertPath(context.Background(), c, src, f, dst, format.PNG, defaultOpts)
 				if err == nil {
 					t.Errorf("%s: unexpected success", src)
 					return
@@ -131,7 +131,7 @@ func TestConcurrentErrorsAreAttributed(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				dst := filepath.Join(dir, fmt.Sprintf("ok-%s-%d.jpg", f, i))
-				if err := c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts); err != nil {
+				if err := convertPath(context.Background(), c, fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts); err != nil {
 					t.Errorf("successful conversion failed: %v", err)
 				}
 			}()

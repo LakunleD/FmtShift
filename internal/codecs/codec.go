@@ -5,6 +5,7 @@ package codecs
 import (
 	"context"
 	"errors"
+	"os"
 
 	"github.com/lakunled/fmtshift/internal/format"
 )
@@ -42,11 +43,18 @@ type Codec interface {
 	Name() string
 	// Capabilities reports the formats supported by this build.
 	Capabilities() []Capability
-	// Convert decodes src, which the caller has identified as srcFormat, and
-	// writes dstFormat to dst, replacing any file already at dst. Callers are
-	// responsible for choosing a safe dst (for example a temporary file) and
-	// for removing it if Convert fails.
-	Convert(ctx context.Context, src string, srcFormat format.Format, dst string, dstFormat format.Format, opts Options) error
+	// Convert decodes the already-open regular file src, which the caller
+	// has identified as srcFormat, and writes dstFormat to dst, replacing any
+	// file already at dst.
+	//
+	// src is a handle rather than a path so that every check the caller made
+	// (identity, size, format, "output is not the source") applies to exactly
+	// the bytes decoded here; implementations must read only through src and
+	// never reopen its name. The caller keeps ownership of src and closes it.
+	//
+	// Callers are responsible for choosing a safe dst (for example a
+	// temporary file) and for removing it if Convert fails.
+	Convert(ctx context.Context, src *os.File, srcFormat format.Format, dst string, dstFormat format.Format, opts Options) error
 }
 
 var (

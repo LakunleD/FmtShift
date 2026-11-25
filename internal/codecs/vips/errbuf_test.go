@@ -39,7 +39,7 @@ func TestProbeErrorNotContaminatedByEarlierWarnings(t *testing.T) {
 	c := newCodec(t)
 	dir := t.TempDir()
 	src := writeWarningJPEG(t, dir)
-	if err := c.Convert(context.Background(), src, format.JPEG, filepath.Join(dir, "out.png"), format.PNG, defaultOpts); err != nil {
+	if err := convertPath(context.Background(), c, src, format.JPEG, filepath.Join(dir, "out.png"), format.PNG, defaultOpts); err != nil {
 		t.Fatalf("warning-only JPEG should convert: %v", err)
 	}
 
@@ -57,10 +57,10 @@ func TestConvertErrorNotContaminatedByEarlierWarnings(t *testing.T) {
 	c := newCodec(t)
 	dir := t.TempDir()
 	src := writeWarningJPEG(t, dir)
-	if err := c.Convert(context.Background(), src, format.JPEG, filepath.Join(dir, "out.png"), format.PNG, defaultOpts); err != nil {
+	if err := convertPath(context.Background(), c, src, format.JPEG, filepath.Join(dir, "out.png"), format.PNG, defaultOpts); err != nil {
 		t.Fatal(err)
 	}
-	err := c.Convert(context.Background(), fixture("invalid/truncated.heic"), format.HEIC, filepath.Join(dir, "bad.png"), format.PNG, defaultOpts)
+	err := convertPath(context.Background(), c, fixture("invalid/truncated.heic"), format.HEIC, filepath.Join(dir, "bad.png"), format.PNG, defaultOpts)
 	if err == nil {
 		t.Fatal("truncated HEIC converted")
 	}

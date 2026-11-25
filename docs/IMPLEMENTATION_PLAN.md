@@ -66,21 +66,24 @@ before M4 begins.
 
 ## 4. M1: Core conversion engine
 
-- [ ] Define Format, ConversionRequest and ConversionResult models.
-- [ ] Implement format detection and supported-format registry.
+- [x] Define Format, Request and Result models (`internal/format`,
+  `internal/converter`).
+- [x] Implement format detection and supported-format registry (codec
+  capabilities).
 - [x] Implement codec abstraction and the adapter selected by M0.
-- [ ] Validate quality, image dimensions and supported still-image inputs.
-- [ ] Apply HEIF transforms exactly once and normalize preserved EXIF
-  orientation to 1.
-- [ ] Map codec colour errors (`ErrHDR`, `ErrColourSpace`) to clear user
-  messages. The colour policy itself is implemented in the codec (M0);
+- [x] Validate quality, image dimensions and supported still-image inputs.
+- [x] Apply HEIF transforms exactly once and normalize preserved EXIF
+  orientation to 1 (codec, M0).
+- [x] Classify codec colour errors (`ErrHDR`, `ErrColourSpace`) as
+  `ErrUnsupportedInput`, keeping the cause. User-facing wording is M2;
   HDR-to-SDR tone mapping is deferred.
-- [ ] Implement alpha compositing for JPEG outputs.
-- [ ] Implement deterministic output names and collision handling.
-- [ ] Reject source/destination aliases, including symlinks and hard links.
-- [ ] Write to temporary files and publish completed outputs safely.
-- [ ] Clean up failed or cancelled operations.
-- [ ] Add typed errors, unit tests and real-codec integration tests.
+- [x] Implement alpha compositing for JPEG outputs (codec, M0).
+- [x] Implement deterministic output names and collision handling.
+- [x] Reject source/destination aliases, including symlinks, hard links,
+  misnamed sources and case-insensitive matches.
+- [x] Write to temporary files and publish completed outputs safely.
+- [x] Clean up failed or cancelled operations.
+- [x] Add typed errors, unit tests and real-codec integration tests.
 
 Acceptance criteria: The engine converts every supported input to every
 supported output without altering the source. Failure and collision tests

@@ -30,6 +30,17 @@ func newCodec(t *testing.T) *Codec {
 
 var defaultOpts = codecs.Options{Quality: 90}
 
+// convertPath opens src and converts it through the handle-based codec API,
+// for tests that work with fixture paths.
+func convertPath(ctx context.Context, c *Codec, src string, srcFmt format.Format, dst string, dstFmt format.Format, opts codecs.Options) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return c.Convert(ctx, f, srcFmt, dst, dstFmt, opts)
+}
+
 // convert runs a conversion into a temp dir, checks the source is untouched
 // and the output really is dstFormat, and returns the output path.
 func convert(t *testing.T, c *Codec, src string, srcFmt, dstFmt format.Format, opts codecs.Options) string {
@@ -39,7 +50,7 @@ func convert(t *testing.T, c *Codec, src string, srcFmt, dstFmt format.Format, o
 		t.Fatal(err)
 	}
 	dst := filepath.Join(t.TempDir(), "out"+dstFmt.Extension())
-	if err := c.Convert(context.Background(), src, srcFmt, dst, dstFmt, opts); err != nil {
+	if err := convertPath(context.Background(), c, src, srcFmt, dst, dstFmt, opts); err != nil {
 		t.Fatalf("Convert(%s -> %s): %v", filepath.Base(src), dstFmt, err)
 	}
 	after, err := os.ReadFile(src)
@@ -286,7 +297,7 @@ func TestHDRAndUnsupportedColourRejected(t *testing.T) {
 	} {
 		for _, strip := range []bool{false, true} {
 			dst := filepath.Join(t.TempDir(), "out.jpg")
-			err := c.Convert(context.Background(), fixture(tc.src), format.HEIC, dst, format.JPEG,
+			err := convertPath(context.Background(), c, fixture(tc.src), format.HEIC, dst, format.JPEG,
 				codecs.Options{Quality: 90, StripMetadata: strip})
 			if !errors.Is(err, tc.want) {
 				t.Errorf("%s strip=%v: err = %v; want %v", tc.src, strip, err, tc.want)
@@ -343,14 +354,13 @@ func TestErrors(t *testing.T) {
 		{"empty", "invalid/empty.heic", format.HEIC, format.JPEG, defaultOpts, codecs.ErrDecode},
 		{"truncated", "invalid/truncated.heic", format.HEIC, format.JPEG, defaultOpts, codecs.ErrDecode},
 		{"wrong content", "invalid/text.jpg", format.JPEG, format.PNG, defaultOpts, codecs.ErrDecode},
-		{"missing", "heic/does-not-exist.heic", format.HEIC, format.JPEG, defaultOpts, codecs.ErrDecode},
 		{"too large", "heic/gradient.heic", format.HEIC, format.JPEG, codecs.Options{Quality: 90, MaxPixels: 100}, codecs.ErrTooLarge},
 		{"heic output", "jpeg/gradient.jpg", format.JPEG, format.HEIC, defaultOpts, codecs.ErrUnsupported},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dst := filepath.Join(t.TempDir(), "out"+tt.dstFmt.Extension())
-			err := c.Convert(context.Background(), fixture(tt.src), tt.srcFmt, dst, tt.dstFmt, tt.opts)
+			err := convertPath(context.Background(), c, fixture(tt.src), tt.srcFmt, dst, tt.dstFmt, tt.opts)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("err = %v; want %v", err, tt.want)
 			}
@@ -364,7 +374,7 @@ func TestInvalidQuality(t *testing.T) {
 	for _, dstFmt := range []format.Format{format.JPEG, format.WebP} {
 		for _, q := range []int{0, 101} {
 			dst := filepath.Join(t.TempDir(), "out"+dstFmt.Extension())
-			err := c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, dstFmt, codecs.Options{Quality: q})
+			err := convertPath(context.Background(), c, fixture("heic/gradient.heic"), format.HEIC, dst, dstFmt, codecs.Options{Quality: q})
 			if err == nil {
 				t.Errorf("%s quality %d accepted", dstFmt, q)
 			}
@@ -386,7 +396,7 @@ func TestCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	dst := filepath.Join(t.TempDir(), "out.jpg")
-	err := c.Convert(ctx, fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts)
+	err := convertPath(ctx, c, fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v; want context.Canceled", err)
 	}
@@ -402,7 +412,7 @@ func TestConcurrentConversions(t *testing.T) {
 	for i := range 16 {
 		go func() {
 			dst := filepath.Join(dir, string(rune('a'+i))+".jpg")
-			errs <- c.Convert(context.Background(), fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts)
+			errs <- convertPath(context.Background(), c, fixture("heic/gradient.heic"), format.HEIC, dst, format.JPEG, defaultOpts)
 		}()
 	}
 	for range 16 {

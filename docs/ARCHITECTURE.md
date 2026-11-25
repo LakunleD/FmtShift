@@ -343,41 +343,69 @@ const (
 )
 ```
 
+`internal/converter` defines the engine's request and result:
+
 ```go
-type ConversionRequest struct {
-    SourcePath       string
-    OutputPath       string
-    Format           Format
-    Quality          int
-    Overwrite        bool
-    PreserveMetadata bool
+type Request struct {
+    SourcePath      string
+    Format          format.Format
+    OutputDir       string // "" = source directory
+    CreateOutputDir bool
+    Quality         int    // 0 = DefaultQuality (85)
+    Overwrite       bool
+    StripMetadata   bool
+    MaxPixels       int64  // 0 = codec default
+}
+
+type Result struct {
+    SourcePath, OutputPath     string
+    SourceFormat, OutputFormat format.Format
+    SourceSize, OutputSize     int64
+    Duration                   time.Duration
 }
 ```
 
-```go
-type ConversionResult struct {
-    SourcePath  string
-    OutputPath  string
-    SourceSize  int64
-    OutputSize  int64
-    Duration    time.Duration
-}
-```
+Every optional field's zero value is the safe default. Metadata is
+expressed as `StripMetadata` rather than `PreserveMetadata` so that an unset
+field keeps metadata. The output name is the source name with its last
+extension replaced (`IMG 1.HEIC` → `IMG 1.jpg`).
 
 These models are shared across the application layers and must not depend on a specific user interface.
 
 ## 8. Error Handling
 
-Define typed errors for common failure categories:
-- File not found.
-- Unsupported input format.
-- Invalid conversion options.
-- Unsupported codec.
-- Corrupt image.
-- Output already exists.
-- Permission denied.
-- Conversion failed.
-- Conversion cancelled.
+Every error from `converter.Convert` matches exactly one kind with
+`errors.Is`, and also wraps its underlying OS or codec error:
+
+| Kind | Meaning |
+|---|---|
+| `ErrInvalidOptions` | Bad request: quality, unwritable format, output path not a directory |
+| `ErrNotFound` | Source or output directory missing |
+| `ErrPermission` | Access denied |
+| `ErrUnsupportedInput` | Not a supported image, or multi-image, HDR, unsupported colour space, too large |
+| `ErrCorrupt` | Looks like a supported format but cannot be decoded |
+| `ErrSameFormat` | Already in the target format; skipped |
+| `ErrOutputExists` | Destination exists and overwrite is off |
+| `ErrSourceIsOutput` | Destination is the source itself (misnamed file, symlink, hard link or case-insensitive match); refused even with overwrite |
+| `ErrConversionFailed` | Encoding or unexpected I/O failure |
+| `ErrCancelled` | Context cancelled; nothing published |
+
+"Unsupported codec" from earlier drafts maps to `ErrInvalidOptions` (cannot
+write the requested format) or `ErrUnsupportedInput` (cannot read the source).
+
+The engine opens the source exactly once (non-blocking on Unix, so a FIFO
+cannot hang it) and passes that `*os.File` to the codec. Identity, size,
+format detection, the source-is-output check and decoding therefore all
+concern the same file, even if the path is replaced or a symlink retargeted
+mid-conversion. Codecs must read only through the handle. Source I/O causes
+(`ErrNotExist`, `ErrPermission`) are classified before codec kinds, and every
+returned `Result`, including on error, carries `Duration`.
+
+Outputs are published from a temporary file in the destination directory:
+by hard link when overwrite is off (fails atomically if the destination
+appeared meanwhile) and by rename when it is on. Both replace directory
+entries only, so a destination that is a link to the source can never cause
+the source's contents to be overwritten.
 
 Batch operations should continue when individual conversions fail and return a summary containing successful, skipped and failed files.
 
