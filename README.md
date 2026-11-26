@@ -8,9 +8,9 @@ $ fmtshift convert IMG_0001.HEIC
 Converted IMG_0001.HEIC -> IMG_0001.jpg
 ```
 
-> **Status:** early development (pre-v0.1). File and folder conversion work;
-> saved configuration and directory watching are planned. There are no
-> release binaries yet; build from source below.
+> **Status:** early development (pre-v0.1). File and folder conversion and
+> saved settings work; directory watching is planned. There are no release
+> binaries yet; build from source below.
 
 ## Supported formats
 
@@ -62,6 +62,8 @@ fmtshift convert ./photos -r -o ./jpegs -w 4         # subfolders too, 4 at a ti
 fmtshift convert photo.heic --quality 90             # JPEG/WebP quality 1-100 (default 85)
 fmtshift convert photo.heic --strip-metadata         # remove EXIF, location, etc.
 fmtshift convert photo.heic --overwrite              # replace an existing photo.jpg
+fmtshift config set quality 90                       # save defaults for convert
+fmtshift config show                                 # settings in effect
 fmtshift formats                                     # what this build can read/write
 fmtshift version
 ```

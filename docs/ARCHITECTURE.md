@@ -286,20 +286,30 @@ Configuration precedence:
 2. User configuration.
 3. Application defaults.
 
-Example configuration:
+Implemented in `internal/config`. Example file (unset keys are omitted and
+fall back to defaults):
 
 ```json
 {
   "version": 1,
-  "format": "jpeg",
-  "quality": 85,
-  "workers": 2,
-  "preserveMetadata": true,
-  "overwrite": false
+  "format": "png",
+  "quality": 90,
+  "workers": 4,
+  "output": "/Users/me/Pictures/Converted",
+  "stripMetadata": true
 }
 ```
 
-Use platform-appropriate user configuration directories.
+Overwrite is intentionally not configurable: a saved "overwrite" would make
+every later command replace files with no visible flag. `output` is stored as
+an absolute path so a saved default does not change meaning with the current
+directory. Unknown keys, invalid values and unsupported versions make the
+file invalid; an invalid file is reported (exit 3) and never rewritten.
+Updates hold an exclusive file lock (flock on Unix) across read-modify-write
+and save atomically via temporary file and rename. `FMTSHIFT_CONFIG`
+overrides the location (used by tests to isolate the user's real settings).
+
+Use platform-appropriate user configuration directories (`os.UserConfigDir`).
 
 | Platform | Configuration location |
 |---|---|

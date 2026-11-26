@@ -10,15 +10,17 @@ import (
 
 	"github.com/lakunled/fmtshift/internal/batch"
 	"github.com/lakunled/fmtshift/internal/codecs"
+	"github.com/lakunled/fmtshift/internal/config"
 	"github.com/lakunled/fmtshift/internal/converter"
 	"github.com/lakunled/fmtshift/internal/format"
 )
 
-// DefaultWorkers is the default number of concurrent conversions.
-const DefaultWorkers = 2
-
-// maxWorkers bounds --workers; each conversion can use hundreds of MB.
-const maxWorkers = 64
+// Built-in defaults live in the config package, the single source for
+// flag defaults, saved settings and their precedence.
+const (
+	DefaultWorkers = config.DefaultWorkers
+	maxWorkers     = config.MaxWorkers // each conversion can use hundreds of MB
+)
 
 type convertFlags struct {
 	to            string
@@ -65,23 +67,27 @@ func newConvertCmd(e *env) *cobra.Command {
 }
 
 func runConvert(cmd *cobra.Command, e *env, f convertFlags, args []string) error {
-	target, err := format.Parse(f.to)
+	// Validate the options typed on the command line before reading saved
+	// settings, so an invalid value is a usage error (exit 2) even when the
+	// configuration file is broken.
+	typed := cmd.Flags().Changed
+	if _, _, err := validateFlags(f, typed); err != nil {
+		return err
+	}
+
+	// Precedence: typed options, then saved settings, then built-in
+	// defaults. A broken configuration file stops the command (exit 3)
+	// rather than silently falling back to defaults.
+	cfg, _, err := loadConfig()
 	if err != nil {
-		return usageError("unknown output format %q (use jpeg, png or webp)", f.to)
+		return err
 	}
-	var from []format.Format
-	for _, name := range f.from {
-		ff, err := format.Parse(name)
-		if err != nil {
-			return usageError("unknown --from format %q (use heic, jpeg, png or webp)", name)
-		}
-		from = append(from, ff)
-	}
-	if f.quality < 1 || f.quality > 100 {
-		return usageError("--quality must be between 1 and 100, got %d", f.quality)
-	}
-	if f.workers < 1 || f.workers > maxWorkers {
-		return usageError("--workers must be between 1 and %d, got %d", maxWorkers, f.workers)
+	applyConfig(cmd, &f, cfg.Effective())
+
+	// Then validate the effective values, whatever their source.
+	target, from, err := validateFlags(f, func(string) bool { return true })
+	if err != nil {
+		return err
 	}
 
 	a, err := e.newApp()
@@ -213,4 +219,58 @@ func formatDuration(d time.Duration) string {
 		return d.Round(time.Millisecond).String()
 	}
 	return d.Round(100 * time.Millisecond).String()
+}
+
+// applyConfig fills every flag the user did not type with the saved or
+// built-in default.
+func applyConfig(cmd *cobra.Command, f *convertFlags, eff config.Effective) {
+	fl := cmd.Flags()
+	if !fl.Changed("to") {
+		f.to = string(eff.Format)
+	}
+	if !fl.Changed("quality") {
+		f.quality = eff.Quality
+	}
+	if !fl.Changed("workers") {
+		f.workers = eff.Workers
+	}
+	if !fl.Changed("output") {
+		f.output = eff.Output
+	}
+	if !fl.Changed("strip-metadata") {
+		f.stripMetadata = eff.StripMetadata
+	}
+}
+
+// validateFlags checks the convert options for which check(name) is true
+// and returns the parsed output and --from formats.
+func validateFlags(f convertFlags, check func(name string) bool) (format.Format, []format.Format, error) {
+	var target format.Format
+	if check("to") {
+		t, err := format.Parse(f.to)
+		if err != nil {
+			return "", nil, usageError("unknown output format %q (use jpeg, png or webp)", f.to)
+		}
+		if t == format.HEIC {
+			return "", nil, usageError("FmtShift cannot write HEIC (use jpeg, png or webp)")
+		}
+		target = t
+	}
+	var from []format.Format
+	if check("from") {
+		for _, name := range f.from {
+			ff, err := format.Parse(name)
+			if err != nil {
+				return "", nil, usageError("unknown --from format %q (use heic, jpeg, png or webp)", name)
+			}
+			from = append(from, ff)
+		}
+	}
+	if check("quality") && (f.quality < 1 || f.quality > 100) {
+		return "", nil, usageError("--quality must be between 1 and 100, got %d", f.quality)
+	}
+	if check("workers") && (f.workers < 1 || f.workers > maxWorkers) {
+		return "", nil, usageError("--workers must be between 1 and %d, got %d", maxWorkers, f.workers)
+	}
+	return target, from, nil
 }

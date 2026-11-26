@@ -85,7 +85,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer, newApp fu
 	root.PersistentFlags().BoolVarP(&e.verbose, "verbose", "v", false, "show detailed errors and timings")
 	root.PersistentFlags().BoolVar(&e.quiet, "quiet", false, "hide per-file and summary messages; errors still print")
 
-	root.AddCommand(newConvertCmd(e), newFormatsCmd(e), newVersionCmd(e))
+	root.AddCommand(newConvertCmd(e), newConfigCmd(e), newFormatsCmd(e), newVersionCmd(e))
 
 	err := root.ExecuteContext(ctx)
 	if err == nil {

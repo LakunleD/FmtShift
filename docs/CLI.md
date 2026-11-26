@@ -233,60 +233,81 @@ fmtshift config <subcommand>
 
 | Subcommand | Description |
 |---|---|
-| set | Set a configuration value |
-| get | Retrieve a configuration value |
-| show | Display current configuration |
-| unset | Remove a configuration value |
-| reset | Restore default configuration |
-| path | Display configuration file location |
+| set | Save a default setting |
+| get | Print the setting in effect for a key |
+| show | Print all settings in effect, as JSON |
+| path | Print the configuration file location |
+| unset | Remove a saved setting (v0.2) |
+| reset | Restore default configuration (v0.2) |
 
-v0.1 includes `set`, `get`, `show` and `path`. `unset` and `reset` are v0.2
-commands.
+### Keys
 
-### Set Configuration
+| Key | Values | Built-in default |
+|---|---|---|
+| format | jpeg, png, webp | jpeg |
+| quality | 1–100 | 85 |
+| workers | 1–64 | 2 |
+| output | a directory; stored as an absolute path (`~` expanded); empty for next to sources | next to sources |
+| strip-metadata | true, false | false |
+
+Overwriting existing files is deliberately **not** a setting: replacing files
+always needs `--overwrite` on the command, so it is never a hidden default.
+`config set overwrite …` is rejected with an explanation.
+
+### Examples
 
 ```bash
-fmtshift config set format jpeg
+fmtshift config set format png
 fmtshift config set quality 90
-fmtshift config set workers 4
-```
-
-### Retrieve Configuration
-
-```bash
-fmtshift config get format
-```
-
-### Display Configuration
-
-```bash
+fmtshift config set output ~/Pictures/Converted
+fmtshift config get quality        # 90
 fmtshift config show
 ```
 
-Example output:
+`show` prints the settings in effect, with built-in defaults filled in:
 
 ```json
 {
-  "version": 1,
-  "format": "jpeg",
+  "format": "png",
   "quality": 90,
-  "workers": 4,
-  "preserveMetadata": true,
-  "overwrite": false
+  "workers": 2,
+  "output": "/Users/me/Pictures/Converted",
+  "stripMetadata": false
 }
-```
-
-### Reset Configuration (v0.2)
-
-```bash
-fmtshift config reset
 ```
 
 ### Configuration Precedence
 
-1. Explicit command-line flags.
+1. Options typed on the command line (including `--strip-metadata=false` to
+   turn off a saved `true`).
 2. Saved user configuration.
 3. Built-in defaults.
+
+### Storage
+
+The file is `fmtshift/config.json` in the per-user configuration directory:
+`~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config`
+on Linux, `%AppData%` on Windows. `fmtshift config path` prints it, and the
+`FMTSHIFT_CONFIG` environment variable overrides it. Reading settings never
+creates the file.
+
+Saves are atomic (written to a temporary file, then renamed), and concurrent
+`config set` commands are serialised with a file lock on macOS and Linux, so
+no update is lost.
+
+### Errors
+
+An invalid value or unknown key on the command line is a usage error (exit
+2) and leaves the file untouched. A configuration file that cannot be read,
+is not valid JSON, has unknown keys or holds invalid values is a
+configuration error (exit 3): `convert`, `config set`, `get` and `show` stop
+and name the file, which is never replaced or "repaired" automatically.
+`formats` and `version` do not read settings and keep working.
+
+Options typed on the command line are validated before the file is read,
+so an invalid option is always a usage error (exit 2), even when the file is
+broken. Anything other than whitespace after the JSON object, such as a
+stray `]` or `}`, makes the file invalid.
 
 ## 6. Formats Command
 

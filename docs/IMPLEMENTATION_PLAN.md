@@ -122,10 +122,10 @@ a readable output image without modifying the source.
 - [x] Prevent concurrent jobs from targeting the same output (duplicate
   preflight over all discovered files).
 - [x] Report converted, skipped and failed files.
-- [ ] Implement platform-appropriate JSON configuration storage.
-- [ ] Add config set, get, show and path.
-- [ ] Implement flag > configuration > default precedence.
-- [ ] Validate and safely persist configuration changes.
+- [x] Implement platform-appropriate JSON configuration storage (`internal/config`).
+- [x] Add config set, get, show and path.
+- [x] Implement flag > configuration > default precedence.
+- [x] Validate and safely persist configuration changes (atomic save, file lock, invalid files never rewritten; overwrite deliberately not configurable).
 - [x] Add batch tests (discovery, worker limit, cancellation, duplicates)
   and CLI folder tests.
 - [ ] Add representative batch benchmarks (100 and 1,000 images). Manual

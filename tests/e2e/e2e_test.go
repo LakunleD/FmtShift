@@ -37,6 +37,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	fixtures, _ = filepath.Abs(filepath.Join("..", "..", "testdata"))
+	// Never let the binary under test read or write the real user settings.
+	os.Setenv("FMTSHIFT_CONFIG", filepath.Join(dir, "config.json"))
 
 	code := m.Run()
 	os.RemoveAll(dir)
