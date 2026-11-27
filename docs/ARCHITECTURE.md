@@ -442,23 +442,40 @@ Batch operations should continue when individual conversions fail and return a s
 
 ## 11. Cross-Platform Distribution
 
-FmtShift will be compiled and packaged for:
+**Packaging decision (M4): libvips comes from the user's package manager;
+FmtShift does not bundle it.**
 
-| OS | Architecture | Planned distribution |
-|---|---|---|
-| macOS | ARM64, AMD64 | GitHub Releases in v0.1; Homebrew in v0.2 |
-| Windows | AMD64 | Deferred to v0.2; GitHub Releases, later WinGet |
-| Linux | AMD64, ARM64 | GitHub Releases, later APT |
+| OS | Architecture | v0.1 distribution | libvips from |
+|---|---|---|---|
+| macOS | ARM64, AMD64 | Homebrew tap, building from the tagged source | Homebrew |
+| Linux | AMD64, ARM64 | GitHub Releases archive; Linuxbrew also works | apt / dnf (libvips 8.15+) |
+| Windows | AMD64 | Deferred to v0.2 | to be decided |
 
-FmtShift links libvips through cgo, so every target is built on a native CI
-runner (or with a target C toolchain) against that platform's libvips.
+Rationale: this ships soonest with the least maintenance and legal exposure.
+FmtShift never distributes libheif, the libde265 HEVC decoder or the GPL x265
+encoder, so the x265 licensing problem and HEVC patent questions from §5.4 do
+not arise for FmtShift itself (not legal advice), and security fixes to the
+image libraries arrive through Homebrew and the distributions.
 
-Each release must either bundle compatible native libraries or install them
-through a package manager, and must state which model it uses. The packaging
-model for each platform is still to be decided; see the known issues in
-§5.4 (GPL x265 in Homebrew's libheif, HEVC patents, dependency size).
+Costs:
+- Users need Homebrew or an apt/dnf step. Linux archives require libvips
+  8.15+ and a glibc at least as new as the build runner's (Ubuntu 24.04),
+  which in practice means Ubuntu 24.04+, Debian 13+ or Fedora 40+.
+- macOS binaries are not published as archives: a binary linked against
+  Homebrew's libvips hard-codes Homebrew's paths. The formula builds from
+  source (about 10 s) instead, so users still do not need to install Go
+  themselves.
 
-Users should not need to install Go to use a published release.
+Rejected for v0.1: bundling a minimal libvips (self-contained archives but
+substantial build infrastructure per target, LGPL relinking obligations, and
+redistribution of an HEVC decoder). Prebuilt sharp-libvips cannot be reused
+because it omits HEVC. A macOS ImageIO codec for HEIC (Apple-licensed HEVC)
+remains a possible later addition behind the codec interface.
+
+Release mechanics are in docs/RELEASING.md and `.github/workflows/release.yml`:
+native builds per Linux architecture, smoke tests in clean `ubuntu:24.04` and
+`debian:trixie` containers with only runtime packages, and a macOS job that
+installs the formula from source and runs `brew test` and `brew audit`.
 
 ## 12. Desktop Application
 

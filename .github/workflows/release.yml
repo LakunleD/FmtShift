@@ -1,0 +1,173 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 builds, tests and publishes a DRAFT release.
+# Running the workflow manually (workflow_dispatch) does everything except
+# publishing, as a dry run.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Build Linux ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git describe needs history and tags
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libvips-dev libheif-dev libheif-plugin-libde265 pkg-config
+
+      - name: Test
+        run: make check
+
+      - name: Build archive
+        run: make dist VERSION="$(git describe --tags --always)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*.tar.gz*
+          if-no-files-found: error
+
+  linux-smoke:
+    name: Smoke test ${{ matrix.image }} ${{ matrix.arch }}
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        image: ["ubuntu:24.04", "debian:trixie"]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    # A clean container with only the runtime libraries a user installs, so
+    # missing dependencies or install-instruction gaps show up here.
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install runtime libraries (as documented in the README)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libvips42t64 libheif-plugin-libde265
+
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: testdata/images
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist
+
+      - name: Verify checksum and unpack
+        run: |
+          cd dist
+          sha256sum -c *.sha256
+          tar -xzf *.tar.gz
+          mv fmtshift_*/ pkg
+
+      - name: Run
+        run: |
+          set -eu
+          bin=dist/pkg/fmtshift
+          $bin version
+          $bin formats | tee formats.txt
+          grep -Eq '^HEIC +Yes +No$' formats.txt
+          mkdir -p work
+          cp testdata/images/heic/gradient.heic work/photo.heic
+          cp testdata/images/heic/irot90.heic work/rotated.heic
+          $bin convert work --to jpeg
+          $bin convert work/photo.heic --to png --output work/png
+          $bin convert work/photo.heic --to webp --output work/webp
+          ls -l work work/png work/webp
+          test -s work/photo.jpg && test -s work/rotated.jpg
+          test -s work/png/photo.png && test -s work/webp/photo.webp
+          test -s dist/pkg/LICENSE && test -s dist/pkg/THIRD_PARTY_LICENSES
+
+  homebrew:
+    name: Homebrew formula (macOS)
+    runs-on: macos-latest
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Source archive and formula
+        id: src
+        run: |
+          set -eu
+          repo="${GITHUB_REPOSITORY,,}"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            # Homebrew infers the version from the tag archive name.
+            url="https://github.com/${repo}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+            version=""
+          else
+            # Dry run: GitHub's archive of the commit under test, so the
+            # formula is downloadable and auditable like a release. The
+            # commit hash carries no version, so set one explicitly.
+            url="https://github.com/${repo}/archive/${GITHUB_SHA}.tar.gz"
+            version="0.0.0"
+          fi
+          curl -fsSL -o source.tar.gz "$url"
+          scripts/render-formula.sh "$url" source.tar.gz $version > fmtshift.rb
+          cat fmtshift.rb
+
+      - name: Install and test from a local tap
+        run: |
+          set -eu
+          brew tap-new local/fmtshift --no-git
+          cp fmtshift.rb "$(brew --repository local/fmtshift)/Formula/"
+          brew trust local/fmtshift || true
+          brew install --build-from-source local/fmtshift/fmtshift
+          brew test local/fmtshift/fmtshift
+          brew audit --strict --new local/fmtshift/fmtshift
+          fmtshift version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: homebrew-formula
+          path: fmtshift.rb
+
+  publish:
+    name: Publish draft release
+    if: github.ref_type == 'tag'
+    needs: [linux-smoke, homebrew]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd artifacts
+          cat *.sha256 > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft \
+            --title "FmtShift $GITHUB_REF_NAME" \
+            --generate-notes \
+            *.tar.gz SHA256SUMS fmtshift.rb

@@ -1,0 +1,30 @@
+class Fmtshift < Formula
+  desc "Convert images locally, e.g. iPhone HEIC photos to JPEG"
+  homepage "https://github.com/lakunled/fmtshift"
+  url "@URL@"
+  sha256 "@SHA256@"
+  license "MIT"
+
+  depends_on "go" => :build
+  depends_on "pkgconf" => :build
+  depends_on "vips"
+
+  def install
+    ENV["CGO_ENABLED"] = "1"
+    # libvips' pkg-config file requires libarchive, which Homebrew keeps
+    # keg-only (installed as a vips dependency).
+    ENV.prepend_path "PKG_CONFIG_PATH", formula_opt_lib("libarchive")/"pkgconfig"
+    ldflags = "-s -w -X github.com/lakunled/fmtshift/internal/version.Version=v#{version}"
+    system "go", "build", *std_go_args(ldflags:), "./cmd/fmtshift"
+  end
+
+  test do
+    assert_match "FmtShift v#{version}", shell_output("#{bin}/fmtshift version")
+    # HEIC support comes from vips' libheif module; check it is present.
+    assert_match(/^HEIC\s+Yes\s+No$/, shell_output("#{bin}/fmtshift formats"))
+
+    system formula_opt_bin("vips")/"vips", "black", testpath/"in.png", "16", "8"
+    system bin/"fmtshift", "convert", testpath/"in.png", "--to", "jpeg"
+    assert_path_exists testpath/"in.jpg"
+  end
+end

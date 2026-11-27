@@ -6,7 +6,7 @@ ifeq ($(shell uname -s),Darwin)
   endif
 endif
 
-.PHONY: all build test race fuzz bench vet fmt check fixtures clean
+.PHONY: all build test race fuzz bench vet fmt check fixtures dist clean
 
 all: check build
 
@@ -51,5 +51,24 @@ check: vet
 fixtures:
 	./scripts/gen-fixtures.sh
 
+# Release archive for the current platform: a stripped binary with the
+# version embedded, LICENSE, README and generated third-party notices, in
+# dist/fmtshift_<version>_<os>_<arch>.tar.gz with a .sha256 file. libvips is
+# not bundled: users install it with their package manager (see README).
+VERSION ?= $(shell git describe --tags --always --dirty)
+DIST_NAME := fmtshift_$(VERSION)_$(shell go env GOOS)_$(shell go env GOARCH)
+
+dist:
+	rm -rf dist/$(DIST_NAME) dist/$(DIST_NAME).tar.gz dist/$(DIST_NAME).tar.gz.sha256
+	mkdir -p dist/$(DIST_NAME)
+	CGO_ENABLED=1 go build -trimpath \
+		-ldflags "-s -w -X github.com/lakunled/fmtshift/internal/version.Version=$(VERSION)" \
+		-o dist/$(DIST_NAME)/fmtshift ./cmd/fmtshift
+	cp LICENSE README.md dist/$(DIST_NAME)/
+	./scripts/third-party-licenses.sh > dist/$(DIST_NAME)/THIRD_PARTY_LICENSES
+	tar -C dist -czf dist/$(DIST_NAME).tar.gz $(DIST_NAME)
+	cd dist && shasum -a 256 $(DIST_NAME).tar.gz > $(DIST_NAME).tar.gz.sha256
+	@echo "built dist/$(DIST_NAME).tar.gz"
+
 clean:
-	rm -rf bin coverage.out
+	rm -rf bin dist coverage.out

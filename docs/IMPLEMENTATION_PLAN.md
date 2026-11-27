@@ -29,9 +29,9 @@ recorded in ARCHITECTURE.md §5.4.
 
 - [x] Initialize the Go module using the actual GitHub repository path.
 - [x] Add AGENTS.md and project documentation.
-- [ ] Add README.md and MIT LICENSE.
+- [x] Add README.md and MIT LICENSE.
 - [x] Add Makefile, .gitignore and initial GitHub Actions workflow.
-- [ ] Push to GitHub and confirm the CI workflow passes on Linux and macOS.
+- [x] Push to GitHub and confirm the CI workflow passes on Linux and macOS.
 - [x] Build a minimal libvips converter behind a codec interface.
 - [x] Validate HEIC decoding and JPEG, PNG and WebP encoding.
 - [x] Benchmark representative single and batch conversions, peak memory and
@@ -47,14 +47,13 @@ recorded in ARCHITECTURE.md §5.4.
   top-level images are rejected.
 - [ ] Verify depth-map and gain-map auxiliary images are ignored.
 - [x] Build and run a minimal artifact on macOS.
-- [ ] Build and run a minimal artifact on Linux, and document Windows
-  feasibility for v0.2.
-- [ ] Decide the packaging model per platform (bundled minimal libvips or
-  package-manager dependency) and document target toolchains, clean-machine
-  installation and redistribution licenses.
-- [ ] Ensure the shipped libheif excludes GPL encoders such as x265.
-- [ ] Review HEVC decoder (libde265) distribution, including patent
-  considerations, before release.
+- [x] Build and run on Linux (CI on Ubuntu 24.04 amd64 and arm64). Windows
+  feasibility for v0.2 is still to be documented.
+- [x] Decide the packaging model: libvips from the package manager, not
+  bundled (ARCHITECTURE.md §11, docs/RELEASING.md).
+- [x] Ensure no GPL encoder is shipped: FmtShift ships no libheif at all.
+- [x] Review HEVC decoder distribution: FmtShift does not distribute one;
+  must be revisited if libvips is ever bundled.
 - [ ] Prove that a release artifact can be installed and run on clean macOS
   and Linux environments.
 - [x] Record the selected codec approach and fallback options in ARCHITECTURE.md.
@@ -138,17 +137,30 @@ Global settings and explicit flags behave predictably.
 
 ## 7. M4: v0.1 packaging and validation
 
-- [ ] Configure CI builds and dependency installation for the selected codec.
-- [ ] Run unit, integration, race and end-to-end tests as supported.
-- [ ] Build macOS ARM64 and AMD64 artifacts.
-- [ ] Build Linux AMD64 and ARM64 artifacts.
-- [ ] Produce checksums and third-party license notices.
-- [ ] Test artifact installation and conversion on clean target environments.
-- [ ] Publish installation instructions and supported platforms.
-- [ ] Prepare GitHub Releases with versioned binaries and any required
-  dependencies.
-- [ ] Document upgrade and uninstall procedures.
+Packaging model (decided): Homebrew tap for macOS, building from source;
+GitHub Releases archives for Linux amd64/arm64; libvips from the package
+manager in both cases. See docs/RELEASING.md.
+
+- [x] Configure CI builds and dependency installation for the selected codec.
+- [x] Run unit, integration, race and end-to-end tests as supported.
+- [x] Build Linux AMD64 and ARM64 archives on native runners (`make dist`,
+  release workflow).
+- [x] Homebrew formula building from the tagged source; verified locally
+  with `brew install --build-from-source`, `brew test` and `brew audit
+  --strict --new`.
+- [x] Produce checksums and generated third-party license notices.
+- [x] Automate clean-environment tests: archives in clean `ubuntu:24.04`
+  and `debian:trixie` containers with runtime packages only; formula install
+  on macOS.
+- [ ] Run the release workflow as a dry run and fix anything it finds.
+- [ ] Create the `lakunled/homebrew-tap` repository.
+- [ ] Publish installation instructions, supported platforms, upgrade and
+  uninstall procedures (README).
+- [ ] Verify with real iPhone photos (normal, rotated, HDR) before tagging.
 - [ ] Tag and publish v0.1.0 after review.
+
+Not in v0.1: macOS archives (Homebrew-linked binaries are not portable) and
+Linux distributions older than Ubuntu 24.04 / Debian 13 / Fedora 40.
 
 Acceptance criteria:
 
@@ -157,9 +169,6 @@ Acceptance criteria:
 A user can install a published artifact on clean macOS and Linux systems and
 convert the fixture set without installing Go. Originals are preserved and
 all required third-party notices and runtime dependencies are present.
-
-Initial distribution is through GitHub Releases. Homebrew publication is
-deferred to v0.2 so it does not block the first validated artifacts.
 
 ## 8. M5: v0.2 monitoring and platform expansion
 
@@ -173,7 +182,6 @@ deferred to v0.2 so it does not block the first validated artifacts.
 - [ ] Build Windows AMD64 artifacts.
 - [ ] Add config unset and reset.
 - [ ] Add machine-readable `--json` output.
-- [ ] Publish a Homebrew tap and verify installation from it.
 - [ ] Repeat clean-machine installation and conversion tests for all v0.2
   targets.
 

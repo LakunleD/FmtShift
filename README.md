@@ -10,7 +10,7 @@ Converted IMG_0001.HEIC -> IMG_0001.jpg
 
 > **Status:** early development (pre-v0.1). File and folder conversion and
 > saved settings work; directory watching is planned. There are no release
-> binaries yet; build from source below.
+> binaries yet; see Installing below.
 
 ## Supported formats
 
@@ -25,27 +25,49 @@ Still images only. Animations, image sequences and HDR (PQ/HLG) images are
 reported as unsupported rather than converted incorrectly. iPhone HDR photos
 convert using their standard (SDR) image.
 
-## Building from source
+## Installing
 
-FmtShift uses [libvips](https://www.libvips.org/) with libheif for image
-processing, so it needs Go and the libvips development files.
+FmtShift uses [libvips](https://www.libvips.org/) (with libheif) for image
+processing. Your package manager installs it; FmtShift does not bundle it.
 
-**macOS** (Homebrew):
+> The first release (v0.1.0) is in preparation. Until it is published, use
+> [Building from source](#building-from-source).
+
+**macOS** (Homebrew; also works with Homebrew on Linux):
 
 ```sh
-brew install go vips
-git clone https://github.com/lakunled/fmtshift.git
-cd fmtshift
-make build            # produces bin/fmtshift
+brew install lakunled/tap/fmtshift
 ```
 
-**Ubuntu / Debian:**
+**Linux** (Ubuntu 24.04+, Debian 13+; amd64 or arm64): install the runtime
+libraries, then download `fmtshift_<version>_linux_<arch>.tar.gz` from
+[Releases](https://github.com/lakunled/fmtshift/releases), check it against
+`SHA256SUMS`, and put `fmtshift` on your `PATH`:
 
 ```sh
-sudo apt install golang libvips-dev libheif-dev libheif-plugin-libde265 pkg-config
+sudo apt install libvips42t64 libheif-plugin-libde265
+sha256sum -c --ignore-missing SHA256SUMS
+tar -xzf fmtshift_*_linux_*.tar.gz
+sudo install fmtshift_*/fmtshift /usr/local/bin/
+```
+
+On Fedora 40+, install `vips` and `libheif` with `dnf` instead.
+
+**Upgrading:** `brew upgrade fmtshift`, or replace the binary with one from a
+newer release. **Uninstalling:** `brew uninstall fmtshift`, or delete the
+binary; saved settings live in the file printed by `fmtshift config path`.
+
+### Building from source
+
+Needs Go and the libvips development files.
+
+```sh
+brew install go vips                                   # macOS
+sudo apt install golang libvips-dev libheif-dev \
+  libheif-plugin-libde265 pkg-config                   # Ubuntu / Debian
 git clone https://github.com/lakunled/fmtshift.git
 cd fmtshift
-make build
+make build                                             # produces bin/fmtshift
 ```
 
 Use `make` rather than plain `go build` on macOS: the Makefile adds
@@ -94,8 +116,10 @@ make fixtures # regenerate the small test images
 ```
 
 Design documents live in [docs/](docs/): product requirements, architecture,
-CLI specification, testing strategy and the implementation plan.
+CLI specification, testing strategy, the implementation plan and the release
+process ([docs/RELEASING.md](docs/RELEASING.md)).
 
 ## License
 
-MIT.
+MIT, see [LICENSE](LICENSE). Release archives include
+`THIRD_PARTY_LICENSES` for the Go modules compiled into the binary.
